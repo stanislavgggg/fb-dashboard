@@ -4,6 +4,7 @@ import hmac
 import io
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
@@ -22,7 +23,14 @@ from .db import (AdAccount, AlertLog, CampaignDay, Profile, Session, SyncRun, Us
 from .fb import ACCOUNT_STATUS, ACTIVE_STATUSES, FBClient, FBError, normalize_proxy
 from .sync import on_startup, run_in_background
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Railway marks everything on stderr as [err]: send normal logs to stdout so real errors stand out
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s", stream=sys.stdout)
+for _name in ("uvicorn", "uvicorn.error"):
+    for _h in logging.getLogger(_name).handlers:
+        if isinstance(_h, logging.StreamHandler):
+            _h.setStream(sys.stdout)
+logging.getLogger("apscheduler").setLevel(logging.WARNING)  # "Adding job tentatively" noise on every start
+logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per FB/Keitaro request drowns the useful lines
 log = logging.getLogger("app")
 scheduler = BackgroundScheduler(timezone="UTC")
 

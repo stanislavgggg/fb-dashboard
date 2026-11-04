@@ -102,7 +102,7 @@ function GeneralSettings() {
             {data.fx_updated_at ? ` Курсы обновлены ${new Date(data.fx_updated_at).toLocaleDateString('ru-RU')}${data.fx_source === 'auto' ? ' автоматически' : ' вручную'}.` : ' Курсы ещё ни разу не сохранялись.'}
           </div>
         </div>
-        <label className="check"><input type="checkbox" checked={f.fx_auto} onChange={(e) => setF((x) => ({ ...x, fx_auto: e.target.checked }))} />Обновлять курсы автоматически раз в день (ЕЦБ через frankfurter.app)</label>
+        <label className="check"><input type="checkbox" checked={f.fx_auto} onChange={(e) => setF((x) => ({ ...x, fx_auto: e.target.checked }))} />Обновлять курсы автоматически раз в день (ЕЦБ через Frankfurter)</label>
         {f.fx_auto && (
           <div className="row" style={{ alignItems: 'baseline', gap: 12 }}>
             <span className="sub">

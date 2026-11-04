@@ -1,4 +1,4 @@
-"""Daily currency rates to USD. Source: frankfurter.app (ECB rates, no key, ~30 currencies).
+"""Daily currency rates to USD. Source: Frankfurter (ECB rates, no key, ~30 currencies).
 
 fx_to_usd stores "how many USD is 1 unit of the currency". Manual overrides live in fx_manual and win."""
 import logging
@@ -10,7 +10,7 @@ from sqlalchemy import select
 from .db import AdAccount, Session, get_settings, set_settings
 
 log = logging.getLogger("fx")
-URL = "https://api.frankfurter.app/latest"
+URL = "https://api.frankfurter.dev/v1/latest"  # the old api.frankfurter.app answers 301 to this
 
 
 def fetch(currencies: set[str]) -> dict[str, float]:
@@ -18,7 +18,8 @@ def fetch(currencies: set[str]) -> dict[str, float]:
     wanted = {c for c in currencies if c and c != "USD"}
     if not wanted:
         return {}
-    r = httpx.get(URL, params={"base": "USD", "symbols": ",".join(sorted(wanted))}, timeout=20)
+    r = httpx.get(URL, params={"base": "USD", "symbols": ",".join(sorted(wanted))}, timeout=20,
+                  follow_redirects=True)  # survive the next move of the API too
     r.raise_for_status()
     rates = r.json().get("rates") or {}
     return {cur: round(1 / float(v), 6) for cur, v in rates.items() if float(v) > 0}

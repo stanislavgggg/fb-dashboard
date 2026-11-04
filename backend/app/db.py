@@ -133,7 +133,7 @@ DEFAULT_SETTINGS = {
     "alert_spend_no_reg_usd": 30.0,  # campaign spent this much today with 0 regs
     "alert_cap_ratio": 0.9,  # account used 90% of its spend cap
     "fx_updated_at": None,  # ISO date when fx_to_usd was last saved
-    "fx_auto": True,  # refresh rates daily from frankfurter.app (ECB)
+    "fx_auto": True,  # refresh rates daily from Frankfurter (ECB)
     "fx_manual": {},  # manual overrides that win over automatic rates
     "fx_source": "",  # "auto" | "manual"
 }
