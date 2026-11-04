@@ -61,6 +61,12 @@ def token_died(s, profile: Profile, error: str):
          f"{html.escape(error[:300])}", "crit")
 
 
+def token_refreshed(s, profile: Profile):
+    emit(s, f"token_refreshed:{profile.id}:{utcnow():%Y-%m-%d %H}",
+         f"🔄 Token of profile <b>{html.escape(profile.name)}</b> ({html.escape(profile.supplier or '—')}) "
+         f"expired — a fresh one was taken from the saved cookies, sync continues", "info")
+
+
 def network_failing(s, profile: Profile, error: str):
     emit(s, f"net:{profile.id}:{date.today()}",
          f"🌐 Profile <b>{html.escape(profile.name)}</b> ({html.escape(profile.supplier or '—')}) failed "

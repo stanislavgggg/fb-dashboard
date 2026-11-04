@@ -1,5 +1,6 @@
 """Minimal Meta Marketing API client. Every request goes through the profile's own proxy."""
 import json
+import re
 import time
 from datetime import date
 
@@ -73,8 +74,8 @@ def normalize_proxy(raw: str | None) -> str | None:
 HINTS = {
     190: "The token is expired, revoked or was copied incompletely — take a fresh one from the profile.",
     102: "The session behind the token has ended — take a fresh token.",
-    1: "Facebook rejected the request without details. For agency tokens this almost always means the request "
-       "came from a different IP than the profile's — add the profile's proxy.",
+    1: "Facebook rejected the request without details. For Ads Manager tokens (EAAB…) this means the request "
+       "doesn't look like the browser session the token came from — add the profile's proxy, cookies and user agent.",
     2: "Temporary Facebook error — try again in a minute.",
     10: "The token has no permission for ads data (ads_read / ads_management).",
     200: "The token has no permission for ads data (ads_read / ads_management).",
@@ -123,15 +124,112 @@ class FBError(Exception):
         return self.code is None
 
 
+DEFAULT_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/130.0.0.0 Safari/537.36")
+# Ads Manager session tokens (EAAB…) are sometimes accepted only on the host Ads Manager itself uses
+API_HOSTS = ("graph.facebook.com", "adsmanager-graph.facebook.com")
+
+
+def normalize_cookies(raw: str | None) -> str | None:
+    """Accepts a Cookie header ("a=1; b=2"), a "cookie: …" line copied from DevTools, or the JSON export
+    of an anti-detect browser / cookie extension ([{"name","value","domain"}, …]). Returns a Cookie header
+    with Facebook cookies only."""
+    if not raw or not raw.strip():
+        return None
+    raw = raw.strip()
+    pairs: list[tuple[str, str]] = []
+    if raw[0] in "[{":
+        try:
+            data = json.loads(raw)
+        except ValueError as e:
+            raise ValueError("Cookies look like JSON but can't be parsed") from e
+        if isinstance(data, dict):
+            data = data.get("cookies") or [data]
+        for c in data:
+            if not isinstance(c, dict) or "name" not in c:
+                continue
+            domain = str(c.get("domain") or "facebook.com")
+            if "facebook.com" in domain:
+                pairs.append((str(c["name"]), str(c.get("value", ""))))
+    else:
+        if raw.lower().startswith("cookie:"):
+            raw = raw[7:]
+        for part in raw.replace("\n", ";").replace("\r", "").split(";"):
+            name, sep, value = part.strip().partition("=")
+            if sep and name:
+                pairs.append((name.strip(), value.strip()))
+    if not pairs:
+        raise ValueError("No cookies found. Paste the cookie header or the JSON export")
+    names = {n for n, _ in pairs}
+    if not {"c_user", "xs"} <= names:
+        raise ValueError("Facebook session cookies c_user and xs are missing — copy all cookies of the profile")
+    seen, out = set(), []
+    for n, v in pairs:  # last value wins, keep order
+        if n in seen:
+            out = [(a, b) for a, b in out if a != n]
+        seen.add(n)
+        out.append((n, v))
+    return "; ".join(f"{n}={v}" for n, v in out)
+
+
+# Pages that embed the Ads Manager / Business access token for a logged-in session
+TOKEN_PAGES = (
+    "https://adsmanager.facebook.com/adsmanager/manage/campaigns",
+    "https://business.facebook.com/content_management",
+)
+_TOKEN_RE = (re.compile(r"(EAAB[A-Za-z0-9]{40,})"), re.compile(r"(EAAG[A-Za-z0-9]{40,})"))
+
+
+def token_from_cookies(cookies: str, proxy: str | None = None, user_agent: str | None = None,
+                       timeout: float = 25) -> str:
+    """What FBTool calls "get the token through cookies": open Ads Manager with the session cookies through
+    the profile's proxy and take the access token the page embeds. Raises FBError if the session is dead."""
+    headers = {"Cookie": cookies, "User-Agent": user_agent or DEFAULT_UA,
+               "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"}
+    last = "no token found on the page"
+    with httpx.Client(proxy=proxy or None, timeout=timeout, headers=headers, follow_redirects=True) as http:
+        for url in TOKEN_PAGES:
+            try:
+                r = http.get(url)
+            except httpx.HTTPError as e:
+                raise FBError(f"network: {e}") from e
+            final = str(r.url)
+            if any(w in final for w in ("/login", "checkpoint", "/recover")):
+                raise FBError("the cookies' session is logged out or on a checkpoint — export fresh cookies", 459)
+            for rx in _TOKEN_RE:
+                m = rx.search(r.text)
+                if m:
+                    return m.group(1)
+            last = f"no token on {url.split('/')[2]} (HTTP {r.status_code})"
+    raise FBError(f"couldn't get a token from cookies: {last}")
+
+
 class FBClient:
-    def __init__(self, token: str, proxy: str | None = None, timeout: float = 60, retries: int = 2):
+    def __init__(self, token: str, proxy: str | None = None, timeout: float = 60, retries: int = 2,
+                 cookies: str | None = None, user_agent: str | None = None):
         self.token = token
         self.retries = retries  # network retries; 0 for a quick "check access"
+        self.host_idx, self.host_locked = 0, False
+        headers = {}
+        if cookies:  # session-bound tokens need the browser session next to them
+            headers["Cookie"] = cookies
+            headers["User-Agent"] = user_agent or DEFAULT_UA
+        elif user_agent:
+            headers["User-Agent"] = user_agent
         self.http = httpx.Client(
-            base_url=f"https://graph.facebook.com/{config.FB_API_VERSION}",
+            base_url=self._base(0),
             proxy=proxy or None,
             timeout=timeout,
+            headers=headers,
         )
+
+    @staticmethod
+    def _base(idx: int) -> str:
+        return f"https://{API_HOSTS[idx]}/{config.FB_API_VERSION}"
+
+    @property
+    def host(self) -> str:
+        return API_HOSTS[self.host_idx]
 
     def close(self):
         self.http.close()
@@ -158,7 +256,17 @@ class FBClient:
 
     def get(self, path: str, **params) -> dict:
         params["access_token"] = self.token
-        return self._request(path, params)
+        try:
+            data = self._request(path, params)
+        except FBError as e:
+            # code 1 on the first call: try the host Ads Manager uses, then stick with whatever works
+            if e.code == 1 and not self.host_locked and self.host_idx + 1 < len(API_HOSTS):
+                self.host_idx += 1
+                self.http.base_url = self._base(self.host_idx)
+                return self.get(path, **{k: v for k, v in params.items() if k != "access_token"})
+            raise
+        self.host_locked = True
+        return data
 
     def paged(self, path: str, **params):
         data = self.get(path, **params)

@@ -6,7 +6,7 @@ import { ago } from '../format'
 import type { Profile } from '../types'
 
 type CheckResult = {
-  ok: boolean; user?: string; total?: number; error?: string
+  ok: boolean; user?: string; total?: number; error?: string; host?: string; hosts_tried?: string[]; token_from_cookies?: boolean
   step?: 'user' | 'ad_accounts'; hint?: string; proxy_hint?: string; accounts?: { id: string; name: string; status: string; currency: string }[] }
 
 export default function ProfilesPage() {
@@ -93,7 +93,7 @@ export default function ProfilesPage() {
                     : p.token_ok === false ? <span className="badge bad">Not working</span>
                     : p.token_ok ? <span className="badge ok">{p.fb_user || 'Working'}</span>
                       : <span className="badge">Not checked</span>}
-                  <small className="sub" style={{ display: 'block' }}>{p.token_masked}</small>
+                  <small className="sub" style={{ display: 'block' }}>{p.token_masked}{p.has_cookies ? ' · cookies' : ''}</small>
                 </td>
                 <td>{p.proxy_masked || <span className="sub">no proxy</span>}</td>
                 <td className="n">{p.accounts_active} / {p.accounts}</td>
@@ -132,18 +132,24 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
   const [f, setF] = useState({
     name: profile?.name || '', supplier: profile?.supplier || '', buyer: profile?.buyer || '',
     notes: profile?.notes || '', active: profile?.active ?? true, token: '', proxy: '',
+    cookies: '', user_agent: profile?.user_agent || '',
   })
   const [clearProxy, setClearProxy] = useState(false)
+  const [clearCookies, setClearCookies] = useState(false)
   const [check, setCheck] = useState<CheckResult | null>(null)
   const [busy, setBusy] = useState<'check' | 'save' | null>(null)
-  const upd = (k: keyof typeof f, v: string | boolean) => { setF((x) => ({ ...x, [k]: v })); if (k === 'token' || k === 'proxy') setCheck(null) }
+  const upd = (k: keyof typeof f, v: string | boolean) => { setF((x) => ({ ...x, [k]: v })); if (k === 'token' || k === 'proxy' || k === 'cookies' || k === 'user_agent') setCheck(null) }
 
   const runCheck = async () => {
     setBusy('check')
     try {
       const body = profile
-        ? { profile_id: profile.id, token: f.token || undefined, proxy: clearProxy ? '' : f.proxy || undefined }
-        : { token: f.token, proxy: f.proxy }
+        ? {
+            profile_id: profile.id, token: f.token || undefined, proxy: clearProxy ? '' : f.proxy || undefined,
+            cookies: clearCookies ? '' : f.cookies.trim() || undefined,
+            user_agent: f.user_agent !== (profile.user_agent || '') ? f.user_agent : undefined,
+          }
+        : { token: f.token, proxy: f.proxy, cookies: f.cookies, user_agent: f.user_agent }
       setCheck(await api<CheckResult>('/api/profiles/check', { method: 'POST', body }))
     } catch (e) {
       setCheck({ ok: false, error: (e as Error).message })
@@ -154,13 +160,15 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
 
   const save = async () => {
     if (!f.name.trim()) return toast('Enter a profile name', 'error')
-    if (!profile && !f.token.trim()) return toast('A token is required', 'error')
+    if (!profile && !f.token.trim() && !f.cookies.trim()) return toast('Enter a token, or cookies to fetch one from', 'error')
     setBusy('save')
     try {
       const body = {
         name: f.name, supplier: f.supplier, buyer: f.buyer, notes: f.notes, active: f.active,
         token: f.token.trim() || null,
         proxy: clearProxy ? '' : f.proxy.trim() ? f.proxy.trim() : profile ? null : '',
+        cookies: clearCookies ? '' : f.cookies.trim() ? f.cookies.trim() : profile ? null : '',
+        user_agent: profile && f.user_agent === (profile.user_agent || '') ? null : f.user_agent,
       }
       if (profile) {
         const r = await api<{ sync_started?: boolean }>(`/api/profiles/${profile.id}`, { method: 'PATCH', body })
@@ -180,7 +188,7 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
     <Modal title={profile ? `Profile "${profile.name}"` : 'New profile'} onClose={onClose}
       footer={<>
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn" onClick={runCheck} disabled={!!busy || (!profile && !f.token.trim())}>
+        <button className="btn" onClick={runCheck} disabled={!!busy || (!profile && !f.token.trim() && !f.cookies.trim())}>
           {busy === 'check' ? 'Checking…' : 'Check access'}
         </button>
         <button className="btn primary" onClick={save} disabled={!!busy}>{busy === 'save' ? 'Saving…' : profile ? 'Save' : 'Add'}</button>
@@ -202,7 +210,8 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
       <div className="field">
         <label htmlFor="pt">Access token</label>
         <textarea id="pt" className="input" rows={3} value={f.token} onChange={(e) => upd('token', e.target.value)}
-          placeholder={profile ? `Current: ${profile.token_masked}. Leave empty to keep it` : 'EAAB…'} spellCheck={false} autoComplete="off" />
+          placeholder={profile ? `Current: ${profile.token_masked}. Leave empty to keep it` : 'EAAB…  — or leave empty and paste cookies below to fetch one automatically'} spellCheck={false} autoComplete="off" />
+        {!profile && <span className="hint">Optional if you paste cookies below — a token will be pulled from the session, like FBTool.</span>}
       </div>
       <div className="field">
         <label htmlFor="pp">Proxy</label>
@@ -214,6 +223,25 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
         )}
       </div>
       <div className="field">
+        <label htmlFor="pc">Cookies</label>
+        <textarea id="pc" className="input" rows={3} value={f.cookies} onChange={(e) => upd('cookies', e.target.value)} disabled={clearCookies}
+          placeholder={profile?.has_cookies ? `Saved (${profile.cookie_names} cookies). Leave empty to keep them` : 'c_user=…; xs=…; datr=…  or the JSON export from the anti-detect browser'}
+          spellCheck={false} autoComplete="off" />
+        <span className="hint">
+          Needed for Ads Manager tokens (EAAB…): Facebook only accepts them together with the browser session they came from.
+          Paste the cookie header from DevTools or the JSON cookie export of the profile. Stored encrypted, never shown again.
+        </span>
+        {profile?.has_cookies && (
+          <label className="check"><input type="checkbox" checked={clearCookies} onChange={(e) => setClearCookies(e.target.checked)} />Remove cookies</label>
+        )}
+      </div>
+      <div className="field">
+        <label htmlFor="pua">User agent</label>
+        <input id="pua" className="input" value={f.user_agent} onChange={(e) => upd('user_agent', e.target.value)}
+          placeholder="Mozilla/5.0 (…) — the profile's browser user agent" spellCheck={false} autoComplete="off" />
+        <span className="hint">Same browser as the cookies. In the profile, open DevTools and run navigator.userAgent in the Console.</span>
+      </div>
+      <div className="field">
         <label htmlFor="pno">Notes</label>
         <textarea id="pno" className="input" rows={2} value={f.notes} onChange={(e) => upd('notes', e.target.value)} />
       </div>
@@ -221,6 +249,8 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
       {check && (check.ok ? (
         <div className="notice info">
           Access OK: {check.user}. Ad accounts visible: {check.total}.
+          {check.token_from_cookies && ' Token was pulled from the cookies.'}
+          {check.host && check.host !== 'graph.facebook.com' && ` (works via ${check.host})`}
           {check.accounts && check.accounts.length > 0 && (
             <div className="sub" style={{ marginTop: 6 }}>
               {check.accounts.slice(0, 8).map((a) => `${a.name} (${a.status}, ${a.currency})`).join('; ')}

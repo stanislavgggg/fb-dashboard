@@ -12,10 +12,10 @@ from datetime import date, timedelta
 from sqlalchemy import delete, select, update
 
 from . import alerts, config, fx, keitaro
-from .crypto import KeyChanged, dec
+from .crypto import KeyChanged, dec, enc
 from .db import (AdAccount, CampaignDay, KeitaroDay, Profile, Session, SyncRun, get_settings, init_db,
                  utcnow)
-from .fb import FBClient, FBError, count_results, money
+from .fb import FBClient, FBError, count_results, money, token_from_cookies
 
 log = logging.getLogger("sync")
 _lock = threading.Lock()
@@ -41,7 +41,8 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
         if p is None:
             return False, f"profile {profile_id} not found"
         try:
-            client = FBClient(dec(p.token_enc), dec(p.proxy_enc))
+            client = FBClient(dec(p.token_enc), dec(p.proxy_enc), cookies=dec(p.cookies_enc),
+                              user_agent=p.user_agent or None)
         except KeyChanged as e:
             p.last_error, p.last_sync_at, p.token_ok = str(e), utcnow(), False
             s.commit()
@@ -52,10 +53,26 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
             return False, f"{p.name}: {e}"
         try:
             try:
-                me = client.me()
-                accounts = list(client.ad_accounts())
+                try:
+                    me = client.me()
+                    accounts = list(client.ad_accounts())
+                except FBError as e:
+                    cookies = dec(p.cookies_enc)
+                    # dead/rejected token but we have the browser session: take a fresh token from it (like FBTool)
+                    if not (cookies and (e.token_invalid or e.code == 1)):
+                        raise
+                    proxy = dec(p.proxy_enc)
+                    new_token = token_from_cookies(cookies, proxy, p.user_agent or None)
+                    if new_token == dec(p.token_enc):
+                        raise e
+                    client.close()
+                    client = FBClient(new_token, proxy, cookies=cookies, user_agent=p.user_agent or None)
+                    me = client.me()
+                    accounts = list(client.ad_accounts())
+                    p.token_enc = enc(new_token)
+                    alerts.token_refreshed(s, p)
             except FBError as e:
-                if e.token_invalid:
+                if e.token_invalid or (e.code == 459 and dec(p.cookies_enc)):
                     if p.token_ok is not False:
                         alerts.token_died(s, p, str(e))
                     p.token_ok = False

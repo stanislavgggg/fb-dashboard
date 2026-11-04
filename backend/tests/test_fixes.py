@@ -345,12 +345,15 @@ def test_add_missing_columns():
 @respx.mock(assert_all_called=False)
 def test_check_access_diagnostics(client, respx_mock):
     _login(client)
-    respx_mock.get(f"{G}/me").mock(return_value=httpx.Response(400, json={"error": {
-        "message": "Invalid request.", "code": 1, "error_subcode": 99, "type": "OAuthException"}}))
+    bad = httpx.Response(400, json={"error": {
+        "message": "Invalid request.", "code": 1, "error_subcode": 99, "type": "OAuthException"}})
+    respx_mock.get(f"{G}/me").mock(return_value=bad)
+    respx_mock.get("https://adsmanager-graph.facebook.com/v24.0/me").mock(return_value=bad)
     r = client.post("/api/profiles/check", json={"token": "EAAB" + "q" * 40}).json()
     assert r["ok"] is False and r["step"] == "user"
     assert "code 1" in r["error"] and "subcode 99" in r["error"]
-    assert "IP" in r["hint"] and "proxy" in r["proxy_hint"]
+    assert "cookies" in r["hint"] and "proxy" in r["proxy_hint"] and "cookies" in r["proxy_hint"]
+    assert r["hosts_tried"] == ["graph.facebook.com", "adsmanager-graph.facebook.com"]
     # token fine, ad accounts fail -> step says so; with a proxy there's no proxy hint
     respx_mock.reset()
     respx_mock.get(f"{G}/me").mock(return_value=httpx.Response(200, json={"id": "1", "name": "U"}))

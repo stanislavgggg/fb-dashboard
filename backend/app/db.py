@@ -44,6 +44,8 @@ class Profile(Base):
     buyer: Mapped[str] = mapped_column(String(120), default="")
     token_enc: Mapped[str] = mapped_column(Text)
     proxy_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cookies_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # Facebook session cookies, encrypted
+    user_agent: Mapped[str] = mapped_column(Text, default="")  # browser UA of the profile, sent with cookies
     notes: Mapped[str] = mapped_column(Text, default="")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     token_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)

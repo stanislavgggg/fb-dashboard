@@ -96,6 +96,7 @@ def _profiles(s) -> list[dict]:
         try:
             dec(p.token_enc)
             dec(p.proxy_enc)
+            dec(p.cookies_enc)
         except KeyChanged:
             key_broken.append(p.name)
             continue

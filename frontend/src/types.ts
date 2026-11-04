@@ -43,6 +43,7 @@ export interface Account {
 export interface Profile {
   id: number; name: string; supplier: string; buyer: string; notes: string; active: boolean
   token_ok: boolean | null; fb_user: string; token_masked: string; proxy_masked: string; key_changed: boolean
+  has_cookies: boolean; cookie_names: number; user_agent: string
   last_sync_at: string | null; last_error: string; accounts: number; accounts_active: number
 }
 

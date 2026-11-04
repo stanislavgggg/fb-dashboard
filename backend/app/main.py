@@ -20,7 +20,8 @@ from . import alerts, auth, config, fx as fxmod, health, keitaro, stats
 from .crypto import KEY_CHANGED, KeyChanged, dec, enc, mask
 from .db import (AdAccount, AlertLog, CampaignDay, Profile, Session, SyncRun, User, get_settings, init_db,
                  set_settings)
-from .fb import ACCOUNT_STATUS, ACTIVE_STATUSES, FBClient, FBError, normalize_proxy
+from .fb import (ACCOUNT_STATUS, ACTIVE_STATUSES, API_HOSTS, FBClient, FBError, normalize_cookies,
+                 normalize_proxy, token_from_cookies)
 from .sync import on_startup, run_in_background
 
 # Railway marks everything on stderr as [err]: send normal logs to stdout so real errors stand out
@@ -84,15 +85,17 @@ def _fx(s) -> tuple[dict, float, dict]:
 def _profile_out(p: Profile, n_accounts: int = 0, n_active: int = 0) -> dict:
     key_changed = False
     try:
-        token, proxy = dec(p.token_enc), dec(p.proxy_enc)
+        token, proxy, cookies = dec(p.token_enc), dec(p.proxy_enc), dec(p.cookies_enc)
     except KeyChanged:  # SECRET_KEY was rotated: the page must still open so the token can be re-entered
-        token, proxy, key_changed = None, None, True
+        token, proxy, cookies, key_changed = None, None, None, True
     return {
         "id": p.id, "name": p.name, "supplier": p.supplier, "buyer": p.buyer, "notes": p.notes,
         "active": p.active, "token_ok": False if key_changed else p.token_ok, "fb_user": p.fb_user,
         "token_masked": KEY_CHANGED if key_changed else mask(token),
         "proxy_masked": KEY_CHANGED if key_changed else (proxy.split("@")[-1] if proxy else ""),
         "key_changed": key_changed,
+        "has_cookies": bool(cookies), "cookie_names": len(cookies.split(";")) if cookies else 0,
+        "user_agent": p.user_agent or "",
         "last_sync_at": p.last_sync_at.isoformat() + "Z" if p.last_sync_at else None,
         "last_error": p.last_error or (KEY_CHANGED if key_changed else ""),
         "accounts": n_accounts, "accounts_active": n_active,
@@ -285,6 +288,8 @@ class ProfileIn(BaseModel):
     buyer: str = ""
     token: str | None = None  # None on update = keep
     proxy: str | None = None  # None on update = keep, "" = remove
+    cookies: str | None = None  # None on update = keep, "" = remove
+    user_agent: str | None = None  # None on update = keep
     notes: str = ""
     active: bool = True
 
@@ -305,6 +310,27 @@ def _clean_proxy(p: str | None) -> str | None:
         raise HTTPException(400, str(e))
 
 
+def _clean_cookies(c: str | None) -> str | None:
+    try:
+        return normalize_cookies(c)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _token_via_cookies(cookies: str, proxy: str | None, ua: str) -> str:
+    try:
+        return token_from_cookies(cookies, proxy, ua or None)
+    except FBError as e:
+        raise HTTPException(400, f"Couldn't get a token from the cookies: {e}")
+
+
+def _clean_ua(ua: str | None) -> str:
+    ua = (ua or "").strip()
+    if ua.lower().startswith("user-agent:"):
+        ua = ua[11:].strip()
+    return ua[:600]
+
+
 @app.get("/api/profiles")
 def list_profiles(user: User = Depends(auth.current_user)):
     with Session() as s:
@@ -322,12 +348,17 @@ def list_profiles(user: User = Depends(auth.current_user)):
 
 @app.post("/api/profiles")
 def create_profile(body: ProfileIn, user: User = Depends(auth.admin_user)):
-    if not body.token:
-        raise HTTPException(400, "A token is required")
-    token, proxy = _clean_token(body.token), _clean_proxy(body.proxy)
+    proxy, cookies, ua = _clean_proxy(body.proxy), _clean_cookies(body.cookies), _clean_ua(body.user_agent)
+    if body.token:
+        token = _clean_token(body.token)
+    elif cookies:
+        token = _token_via_cookies(cookies, proxy, ua)
+    else:
+        raise HTTPException(400, "A token or cookies are required")
     with Session() as s:
         p = Profile(name=body.name.strip(), supplier=body.supplier.strip(), buyer=body.buyer.strip(),
-                    notes=body.notes, active=body.active, token_enc=enc(token), proxy_enc=enc(proxy))
+                    notes=body.notes, active=body.active, token_enc=enc(token), proxy_enc=enc(proxy),
+                    cookies_enc=enc(cookies), user_agent=ua)
         s.add(p)
         s.commit()
         pid = p.id
@@ -349,6 +380,12 @@ def update_profile(pid: int, body: ProfileIn, user: User = Depends(auth.admin_us
             p.token_enc, p.token_ok, changed = enc(_clean_token(body.token)), None, True
         if body.proxy is not None:
             p.proxy_enc, changed = enc(_clean_proxy(body.proxy)), True
+        if body.cookies is not None:
+            p.cookies_enc, changed = enc(_clean_cookies(body.cookies)), True
+        if body.user_agent is not None:
+            ua = _clean_ua(body.user_agent)
+            changed = changed or ua != (p.user_agent or "")
+            p.user_agent = ua
         if changed:
             p.last_error, p.net_fails = "", 0
         s.commit()
@@ -375,6 +412,8 @@ def delete_profile(pid: int, user: User = Depends(auth.admin_user)):
 class CheckIn(BaseModel):
     token: str | None = None
     proxy: str | None = None
+    cookies: str | None = None
+    user_agent: str | None = None
     profile_id: int | None = None  # check a saved profile
 
 
@@ -388,29 +427,65 @@ def check_profile(body: CheckIn, user: User = Depends(auth.admin_user)):
             try:
                 token = _clean_token(body.token) if body.token else dec(p.token_enc)
                 proxy = _clean_proxy(body.proxy) if body.proxy is not None else dec(p.proxy_enc)
+                cookies = _clean_cookies(body.cookies) if body.cookies is not None else dec(p.cookies_enc)
+                ua = _clean_ua(body.user_agent) if body.user_agent is not None else p.user_agent
             except KeyChanged:
                 return {"ok": False, "error": KEY_CHANGED}
     else:
-        if not body.token:
-            raise HTTPException(400, "A token is required")
-        token, proxy = _clean_token(body.token), _clean_proxy(body.proxy)
-    client = FBClient(token, proxy, timeout=15, retries=0)  # a check must answer fast, not hang for minutes
+        proxy, cookies, ua = _clean_proxy(body.proxy), _clean_cookies(body.cookies), _clean_ua(body.user_agent)
+        if body.token:
+            token = _clean_token(body.token)
+        elif cookies:
+            token = None
+        else:
+            raise HTTPException(400, "A token or cookies are required")
+    token_from_session = False
+    if not token and cookies:
+        try:
+            token, token_from_session = token_from_cookies(cookies, proxy, ua or None, timeout=20), True
+        except FBError as e:
+            return {"ok": False, "error": f"Couldn't get a token from the cookies: {e}", "step": "token",
+                    "hint": e.hint}
+    client = FBClient(token, proxy, timeout=15, retries=0, cookies=cookies, user_agent=ua or None)  # a check must answer fast, not hang for minutes
     step = "user"
     no_proxy_hint = ("No proxy is set. Agency tokens are usually tied to the profile's IP — "
                      "add the same proxy the buyer uses for this profile.") if not proxy else ""
+    no_cookies_hint = ("No cookies are set. Ads Manager tokens (EAAB…) usually only work together with the browser "
+                       "session they came from — add the profile's cookies and user agent.") if not cookies else ""
     try:
-        me_ = client.me()
-        step = "ad_accounts"
-        accs = list(client.ad_accounts())
+        try:
+            me_ = client.me()
+            step = "ad_accounts"
+            accs = list(client.ad_accounts())
+        except FBError as e:
+            # the pasted token is dead or rejected, but there are cookies: try a fresh token from the session
+            if token_from_session or not cookies or not (e.token_invalid or e.code == 1) or step != "user":
+                raise
+            try:
+                fresh = token_from_cookies(cookies, proxy, ua or None, timeout=20)
+            except FBError:
+                raise e
+            client.close()
+            client = FBClient(fresh, proxy, timeout=15, retries=0, cookies=cookies, user_agent=ua or None)
+            token_from_session = True
+            me_ = client.me()
+            step = "ad_accounts"
+            accs = list(client.ad_accounts())
     except FBError as e:
         return {"ok": False, "error": e.detail(), "code": e.code, "subcode": e.subcode, "step": step,
-                "hint": e.hint, "proxy_hint": no_proxy_hint if e.code is not None else ""}
+                "hint": e.hint,
+                # proxy matters for any FB answer; cookies only for the "doesn't look like the session" errors
+                "proxy_hint": " ".join(h for h in (
+                    no_proxy_hint if e.code is not None else "",
+                    no_cookies_hint if e.code in (1, 100) else "") if h),
+                "hosts_tried": list(API_HOSTS[:client.host_idx + 1])}
     except Exception as e:
         return {"ok": False, "error": f"Proxy or network: {e}", "step": step,
                 "hint": "Check that the proxy is alive and the format is right."}
     finally:
         client.close()
-    return {"ok": True, "user": me_.get("name"), "accounts": [
+    return {"ok": True, "user": me_.get("name"), "host": client.host, "token_from_cookies": token_from_session,
+            "accounts": [
         {"id": a["id"], "name": a.get("name"), "status": ACCOUNT_STATUS.get(int(a.get("account_status") or 0)),
          "currency": a.get("currency")} for a in accs[:100]], "total": len(accs)}
 
