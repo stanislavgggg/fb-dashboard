@@ -61,7 +61,7 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
                     p.token_ok = False
                 elif e.network:
                     _network_failure(s, p, str(e))
-                p.last_error, p.last_sync_at = f"[{e.code}] {e}" if e.code else str(e), utcnow()
+                p.last_error, p.last_sync_at = e.detail(), utcnow()
                 s.commit()
                 return False, f"{p.name}: {e}"
 
@@ -124,7 +124,7 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
                         rows += 1
                     acc.last_error = ""
                 except FBError as e:
-                    acc.last_error = f"[{e.code}] {e}"
+                    acc.last_error = e.detail()
                     errors.append(f"{acc.name}: {e}")
                 except Exception as e:  # unexpected payload etc. — one account must not kill the profile
                     # (parsing happens before the delete, so nothing destructive is pending here)

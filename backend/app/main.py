@@ -395,13 +395,19 @@ def check_profile(body: CheckIn, user: User = Depends(auth.admin_user)):
             raise HTTPException(400, "A token is required")
         token, proxy = _clean_token(body.token), _clean_proxy(body.proxy)
     client = FBClient(token, proxy, timeout=15, retries=0)  # a check must answer fast, not hang for minutes
+    step = "user"
+    no_proxy_hint = ("No proxy is set. Agency tokens are usually tied to the profile's IP — "
+                     "add the same proxy the buyer uses for this profile.") if not proxy else ""
     try:
         me_ = client.me()
+        step = "ad_accounts"
         accs = list(client.ad_accounts())
     except FBError as e:
-        return {"ok": False, "error": str(e), "code": e.code}
+        return {"ok": False, "error": e.detail(), "code": e.code, "subcode": e.subcode, "step": step,
+                "hint": e.hint, "proxy_hint": no_proxy_hint if e.code is not None else ""}
     except Exception as e:
-        return {"ok": False, "error": f"Proxy or network: {e}"}
+        return {"ok": False, "error": f"Proxy or network: {e}", "step": step,
+                "hint": "Check that the proxy is alive and the format is right."}
     finally:
         client.close()
     return {"ok": True, "user": me_.get("name"), "accounts": [

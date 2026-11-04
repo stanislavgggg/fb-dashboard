@@ -69,10 +69,49 @@ def normalize_proxy(raw: str | None) -> str | None:
     raise ValueError("Can't parse the proxy. Example: host:port:user:pass or http://user:pass@host:port")
 
 
+# What the common Graph API errors usually mean for agency tokens
+HINTS = {
+    190: "The token is expired, revoked or was copied incompletely — take a fresh one from the profile.",
+    102: "The session behind the token has ended — take a fresh token.",
+    1: "Facebook rejected the request without details. For agency tokens this almost always means the request "
+       "came from a different IP than the profile's — add the profile's proxy.",
+    2: "Temporary Facebook error — try again in a minute.",
+    10: "The token has no permission for ads data (ads_read / ads_management).",
+    200: "The token has no permission for ads data (ads_read / ads_management).",
+    100: "The request was rejected as invalid for this token — often an IP/session mismatch (add the profile's proxy) "
+         "or a token from a different app type.",
+    368: "Facebook has temporarily blocked this account for suspicious activity.",
+    459: "Facebook wants a checkpoint/login confirmation in the profile — open it in the anti-detect browser.",
+    460: "The password of the account was changed — the token is no longer valid.",
+    464: "The account behind the token is not confirmed / checkpointed.",
+}
+
+
 class FBError(Exception):
-    def __init__(self, message: str, code: int | None = None):
+    def __init__(self, message: str, code: int | None = None, subcode: int | None = None,
+                 etype: str = "", user_msg: str = ""):
         super().__init__(message)
-        self.code = code
+        self.code, self.subcode, self.etype, self.user_msg = code, subcode, etype, user_msg
+
+    @property
+    def hint(self) -> str:
+        if self.code is None:
+            return "Network or proxy error — check that the proxy is alive and the format is right."
+        return HINTS.get(self.code, "")
+
+    def detail(self) -> str:
+        """One line with everything Facebook told us, for logs and the UI."""
+        bits = [str(self)]
+        meta = [f"code {self.code}"] if self.code is not None else []
+        if self.subcode:
+            meta.append(f"subcode {self.subcode}")
+        if self.etype:
+            meta.append(self.etype)
+        if meta:
+            bits.append(f"({', '.join(meta)})")
+        if self.user_msg and self.user_msg not in str(self):
+            bits.append(f"— {self.user_msg}")
+        return " ".join(bits)
 
     @property
     def token_invalid(self) -> bool:
@@ -113,7 +152,8 @@ class FBClient:
             if code in (4, 17, 32, 613, 80004) and attempt < 3:
                 _sleep(30 * (attempt + 1))
                 return self._request(url, params, attempt + 1)
-            raise FBError(err.get("message", "unknown error"), code)
+            raise FBError(err.get("message", "unknown error"), code, err.get("error_subcode"),
+                          err.get("type", ""), err.get("error_user_msg") or err.get("error_user_title") or "")
         return data
 
     def get(self, path: str, **params) -> dict:

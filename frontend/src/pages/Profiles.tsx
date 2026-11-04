@@ -5,7 +5,9 @@ import { ErrorBox, Modal, Spinner, useLoad, useToast } from '../components/ui'
 import { ago } from '../format'
 import type { Profile } from '../types'
 
-type CheckResult = { ok: boolean; user?: string; total?: number; error?: string; accounts?: { id: string; name: string; status: string; currency: string }[] }
+type CheckResult = {
+  ok: boolean; user?: string; total?: number; error?: string
+  step?: 'user' | 'ad_accounts'; hint?: string; proxy_hint?: string; accounts?: { id: string; name: string; status: string; currency: string }[] }
 
 export default function ProfilesPage() {
   const me = useMe()
@@ -226,7 +228,16 @@ function ProfileForm({ profile, onClose, onSaved }: { profile: Profile | null; o
             </div>
           )}
         </div>
-      ) : <div className="notice bad">No access: {check.error}</div>)}
+      ) : (
+        <div className="notice bad">
+          <div>
+            {check.step === 'ad_accounts' ? 'The token works, but ad accounts could not be read: ' : 'No access: '}
+            {check.error}
+          </div>
+          {check.hint && <div style={{ marginTop: 6 }}>{check.hint}</div>}
+          {check.proxy_hint && <div style={{ marginTop: 6 }}><strong>{check.proxy_hint}</strong></div>}
+        </div>
+      ))}
     </Modal>
   )
 }
