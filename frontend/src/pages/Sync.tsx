@@ -3,7 +3,11 @@ import { api } from '../api'
 import { useMe } from '../App'
 import { ErrorBox, Spinner, useLoad, useToast } from '../components/ui'
 import { dateTime } from '../format'
-import type { Alert, SyncRun } from '../types'
+import type { Alert, Health, SyncRun } from '../types'
+
+const LEVEL = {
+  ok: { cls: 'ok', label: 'Норма' }, warn: { cls: 'warn', label: 'Внимание' }, fail: { cls: 'bad', label: 'Проблема' },
+} as const
 
 const TRIGGERS: Record<string, string> = {
   schedule: 'По расписанию', startup: 'При запуске', manual: 'Вручную',
@@ -15,12 +19,13 @@ export default function SyncPage() {
   const toast = useToast()
   const runs = useLoad(() => api<SyncRun[]>('/api/sync/runs?limit=50'), [])
   const alerts = useLoad(() => api<Alert[]>('/api/alerts?limit=100'), [])
+  const health = useLoad(() => (me.role === 'admin' ? api<Health>('/api/health') : Promise.resolve(null)), [])
   const [days, setDays] = useState(3)
   const running = runs.data?.some((r) => !r.finished_at)
 
   useEffect(() => {
     if (!running) return
-    const t = setInterval(() => { runs.reload(); alerts.reload() }, 5000)
+    const t = setInterval(() => { runs.reload(); alerts.reload(); health.reload() }, 5000)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [running])
@@ -49,6 +54,31 @@ export default function SyncPage() {
           </div>
         )}
       </div>
+
+      {me.role === 'admin' && (
+        <section className="panel panel-pad">
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <h2 style={{ margin: 0 }}>
+              Здоровье сервиса{' '}
+              {health.data && <span className={`badge ${LEVEL[health.data.status].cls}`}>{LEVEL[health.data.status].label}</span>}
+            </h2>
+            <button className="btn small" onClick={health.reload} disabled={health.loading}>Проверить</button>
+          </div>
+          {health.error && <ErrorBox text={health.error} onRetry={health.reload} />}
+          {health.loading && !health.data && <Spinner />}
+          {health.data?.checks.map((c, i) => (
+            <div className="alert-item" key={i}>
+              <span className={`badge ${LEVEL[c.level].cls}`}>{LEVEL[c.level].label}</span>
+              <span className="txt">
+                <strong>{c.name}:</strong> {c.text}
+                {Object.entries(c.details || {}).filter(([, v]) => Array.isArray(v)).map(([k, v]) => (
+                  <span key={k} className="sub" style={{ display: 'block' }}>{(v as string[]).join('; ')}</span>
+                ))}
+              </span>
+            </div>
+          ))}
+        </section>
+      )}
 
       <section className="panel panel-pad">
         <h2>Алерты</h2>

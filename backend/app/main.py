@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import hmac
 import io
 import logging
 import os
@@ -8,13 +9,13 @@ from datetime import date, timedelta
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, desc, select
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import alerts, auth, config, fx as fxmod, keitaro, stats
+from . import alerts, auth, config, fx as fxmod, health, keitaro, stats
 from .crypto import KEY_CHANGED, KeyChanged, dec, enc, mask
 from .db import (AdAccount, AlertLog, CampaignDay, Profile, Session, SyncRun, User, get_settings, init_db,
                  set_settings)
@@ -593,7 +594,30 @@ def delete_user(uid: int, user: User = Depends(auth.admin_user)):
 
 @app.get("/healthz")
 def healthz():
+    # Railway's deploy healthcheck: only "the process is up". Sync problems must not fail a deploy
     return {"ok": True}
+
+
+def _health_allowed(request: Request) -> bool:
+    token = request.headers.get("x-health-token") or request.query_params.get("token") or ""
+    if config.HEALTH_TOKEN and token and hmac.compare_digest(token, config.HEALTH_TOKEN):
+        return True
+    try:
+        return auth.current_user(request).role == "admin"
+    except HTTPException:
+        return False
+
+
+@app.get("/api/health")
+def health_report(request: Request, format: str = "json"):
+    """Full health report. 200 when ok/warn, 503 when something is broken — so uptime monitors can alert on it."""
+    if not _health_allowed(request):
+        raise HTTPException(401, "Нужен админ или заголовок X-Health-Token")
+    r = health.report(scheduler_running=scheduler.running if config.SCHEDULER_ENABLED else None)
+    code = 503 if r["status"] == "fail" else 200
+    if format == "text":
+        return PlainTextResponse(health.as_text(r), status_code=code)
+    return JSONResponse(r, status_code=code)
 
 
 # ---------------------------------------------------------------- frontend (SPA)

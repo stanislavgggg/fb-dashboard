@@ -35,6 +35,9 @@ KEITARO_DAYS_BACK = int(os.getenv("KEITARO_DAYS_BACK", "45"))
 
 TG_BOT_TOKEN = os.getenv("TG_BOT_TOKEN", "")
 
+# token for GET /api/health without logging in (terminal, uptime monitors). Empty = admin session only
+HEALTH_TOKEN = os.getenv("HEALTH_TOKEN", "").strip()
+
 SYNC_MINUTES = int(os.getenv("SYNC_MINUTES", "30"))
 SYNC_DAYS_BACK = int(os.getenv("SYNC_DAYS_BACK", "7"))  # FB backfills spend/conversions up to 72h
 SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "1") == "1"

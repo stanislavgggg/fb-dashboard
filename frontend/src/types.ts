@@ -59,4 +59,10 @@ export interface Settings {
   fx_updated_at: string | null; fx_auto: boolean; fx_manual: Record<string, number>; fx_source: string
 }
 
+export interface HealthCheck {
+  name: string; level: 'ok' | 'warn' | 'fail'; text: string
+  details?: Record<string, string | number | string[]>
+}
+export interface Health { status: 'ok' | 'warn' | 'fail'; checked_at: string; checks: HealthCheck[] }
+
 export interface User { id: number; login: string; role: Role; buyer: string }

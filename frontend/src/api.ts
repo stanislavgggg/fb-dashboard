@@ -37,7 +37,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
   } catch {
     data = text
   }
-  if (!res.ok) {
+  if (!res.ok && !(res.status === 503 && path.startsWith('/api/health'))) {
     const detail = data && typeof data === 'object' && 'detail' in data ? (data as { detail: unknown }).detail : null
     throw new ApiError(res.status, detail ? detailText(detail) : `Ошибка ${res.status}`)
   }
