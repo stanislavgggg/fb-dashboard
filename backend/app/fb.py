@@ -11,9 +11,9 @@ from . import config
 _sleep = time.sleep  # patched in tests
 
 ACCOUNT_STATUS = {
-    1: "Активен", 2: "Отключён", 3: "Долг (unsettled)", 7: "На проверке",
-    8: "Ожидает оплаты", 9: "Grace period", 100: "Закрывается", 101: "Закрыт",
-    201: "Активен", 202: "Закрыт",
+    1: "Active", 2: "Disabled", 3: "Unsettled", 7: "Pending review",
+    8: "Pending settlement", 9: "Grace period", 100: "Pending closure", 101: "Closed",
+    201: "Active", 202: "Closed",
 }
 ACTIVE_STATUSES = {1, 201}
 
@@ -29,7 +29,7 @@ def _creds(user: str, pwd: str) -> str:
 def _hostport(hp: str) -> str:
     host, sep, port = hp.rpartition(":")
     if not sep or not port.isdigit() or not host or not (1 <= int(port) <= 65535):
-        raise ValueError(f"Не понял host:port в прокси: {hp!r}")
+        raise ValueError(f"Can't parse host:port in proxy: {hp!r}")
     return f"{host}:{port}"
 
 
@@ -48,7 +48,7 @@ def normalize_proxy(raw: str | None) -> str | None:
         scheme, rest = raw.split("://", 1)
         scheme = scheme.lower()
         if scheme not in ("http", "https", "socks5", "socks5h"):
-            raise ValueError(f"Неподдерживаемая схема прокси: {scheme}")
+            raise ValueError(f"Unsupported proxy scheme: {scheme}")
         rest = rest.rstrip("/")
         if "@" in rest:
             creds, hp = rest.rsplit("@", 1)
@@ -66,7 +66,7 @@ def normalize_proxy(raw: str | None) -> str | None:
         return f"http://{_creds(user, pwd)}@{_hostport(hp)}"
     if len(parts) == 2:
         return f"http://{_hostport(raw)}"
-    raise ValueError("Не понял формат прокси. Пример: host:port:user:pass или http://user:pass@host:port")
+    raise ValueError("Can't parse the proxy. Example: host:port:user:pass or http://user:pass@host:port")
 
 
 class FBError(Exception):

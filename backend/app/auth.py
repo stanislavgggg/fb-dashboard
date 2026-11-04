@@ -34,7 +34,7 @@ def ensure_admin():
         if s.scalar(select(User.id).limit(1)) is not None:
             return
         if not config.ADMIN_PASSWORD:
-            raise RuntimeError("Нет пользователей и не задан ADMIN_PASSWORD — задай его для первого входа")
+            raise RuntimeError("No users yet and ADMIN_PASSWORD is not set — set it for the first login")
         s.add(User(login=config.ADMIN_LOGIN, password_hash=hash_password(config.ADMIN_PASSWORD), role="admin"))
         s.commit()
 
@@ -60,13 +60,13 @@ def note_success(ip: str):
 def current_user(request: Request) -> User:
     uid = request.session.get("uid")
     if not uid:
-        raise HTTPException(401, "Нужно войти")
+        raise HTTPException(401, "Please log in")
     with Session() as s:
         user = s.get(User, uid)
     # session_version changes on password change / admin reset: old cookies stop working everywhere
     if user is None or request.session.get("sv") != user.session_version:
         request.session.clear()
-        raise HTTPException(401, "Нужно войти")
+        raise HTTPException(401, "Please log in")
     return user
 
 
@@ -79,5 +79,5 @@ def scope_buyer(user: User) -> str | None:
 
 def admin_user(user: User = Depends(current_user)) -> User:
     if user.role != "admin":
-        raise HTTPException(403, "Только для админа")
+        raise HTTPException(403, "Admins only")
     return user

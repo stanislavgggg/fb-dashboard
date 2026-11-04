@@ -7,7 +7,7 @@ import type { Role, Settings, User } from '../types'
 export default function SettingsPage() {
   return (
     <div className="stack">
-      <div className="page-head"><h1>Настройки</h1></div>
+      <div className="page-head"><h1>Settings</h1></div>
       <GeneralSettings />
       <Users />
       <ChangePassword />
@@ -53,13 +53,13 @@ function GeneralSettings() {
       const cur = r.cur.trim().toUpperCase()
       const rate = Number(r.rate.replace(',', '.'))
       if (!cur) continue
-      if (!/^[A-Z]{3}$/.test(cur) || !(rate > 0)) return toast(`Проверь курс ${cur || '?'}: нужен код из 3 букв и число больше нуля`, 'error')
+      if (!/^[A-Z]{3}$/.test(cur) || !(rate > 0)) return toast(`Check the rate for ${cur || '?'}: needs a 3-letter code and a number above zero`, 'error')
       rates[cur] = rate
     }
     const noreg = Number(f.noreg.replace(',', '.'))
     const cap = Number(f.cap)
-    if (!(noreg >= 0)) return toast('Порог «расход без регов» должен быть числом', 'error')
-    if (!(cap >= 0 && cap <= 100)) return toast('Порог лимита — от 0 до 100%', 'error')
+    if (!(noreg >= 0)) return toast('The "spend without regs" threshold must be a number', 'error')
+    if (!(cap >= 0 && cap <= 100)) return toast('The spend cap threshold must be 0–100%', 'error')
     setBusy(true)
     try {
       await api('/api/settings', {
@@ -70,7 +70,7 @@ function GeneralSettings() {
           tg_chat_id: f.tg_chat_id.trim(), alert_spend_no_reg_usd: noreg, alert_cap_ratio: cap / 100,
         },
       })
-      toast('Настройки сохранены')
+      toast('Settings saved')
       reload()
     } catch (e) {
       toast((e as Error).message, 'error')
@@ -83,7 +83,7 @@ function GeneralSettings() {
     try {
       // send to the chat id typed in the form, even if it hasn't been saved yet
       await api('/api/settings/test-telegram', { method: 'POST', body: { tg_chat_id: f.tg_chat_id.trim() } })
-      toast('Тестовое сообщение отправлено')
+      toast('Test message sent')
     } catch (e) {
       toast((e as Error).message, 'error')
     }
@@ -96,34 +96,34 @@ function GeneralSettings() {
     <>
       <section className="panel panel-pad stack">
         <div>
-          <h2>Курсы валют к доллару</h2>
+          <h2>Currency rates to USD</h2>
           <div className="sub">
-            Кабинеты в других валютах переводятся в доллары по этим курсам. Сколько долларов стоит 1 единица валюты.
-            {data.fx_updated_at ? ` Курсы обновлены ${new Date(data.fx_updated_at).toLocaleDateString('ru-RU')}${data.fx_source === 'auto' ? ' автоматически' : ' вручную'}.` : ' Курсы ещё ни разу не сохранялись.'}
+            Ad accounts in other currencies are converted to USD at these rates: how many USD one unit of the currency is worth.
+            {data.fx_updated_at ? ` Rates updated ${new Date(data.fx_updated_at).toLocaleDateString('en-GB')}${data.fx_source === 'auto' ? ' automatically' : ' manually'}.` : ' Rates have never been saved.'}
           </div>
         </div>
-        <label className="check"><input type="checkbox" checked={f.fx_auto} onChange={(e) => setF((x) => ({ ...x, fx_auto: e.target.checked }))} />Обновлять курсы автоматически раз в день (ЕЦБ через Frankfurter)</label>
+        <label className="check"><input type="checkbox" checked={f.fx_auto} onChange={(e) => setF((x) => ({ ...x, fx_auto: e.target.checked }))} />Update rates automatically once a day (ECB via Frankfurter)</label>
         {f.fx_auto && (
           <div className="row" style={{ alignItems: 'baseline', gap: 12 }}>
             <span className="sub">
-              Сейчас: {Object.entries(data.fx_to_usd).filter(([c]) => c !== 'USD').map(([c, r]) => `${c} ${r}`).join(', ') || 'ничего'}
+              Current: {Object.entries(data.fx_to_usd).filter(([c]) => c !== 'USD').map(([c, r]) => `${c} ${r}`).join(', ') || 'none'}
             </span>
-            <button className="btn small" onClick={refreshFx} disabled={refreshing}>{refreshing ? 'Обновляю…' : 'Обновить сейчас'}</button>
+            <button className="btn small" onClick={refreshFx} disabled={refreshing}>{refreshing ? 'Updating…' : 'Update now'}</button>
           </div>
         )}
-        <div className="sub">{f.fx_auto ? 'Ручные курсы ниже имеют приоритет над автоматическими — для валют, которых нет у ЕЦБ, или если нужен фиксированный курс.' : 'Все курсы задаются вручную.'}</div>
+        <div className="sub">{f.fx_auto ? 'Manual rates below override the automatic ones — for currencies the ECB doesn\'t publish, or when you need a fixed rate.' : 'All rates are set manually.'}</div>
         {fx.map((r, i) => (
           <div className="row" key={i}>
-            <input className="input" style={{ width: 90 }} value={r.cur} maxLength={3} aria-label="Валюта"
+            <input className="input" style={{ width: 90 }} value={r.cur} maxLength={3} aria-label="Currency"
               onChange={(e) => setFx((x) => x.map((y, j) => (j === i ? { ...y, cur: e.target.value.toUpperCase() } : y)))} />
-            <input className="input" style={{ width: 120 }} value={r.rate} inputMode="decimal" aria-label="Курс"
+            <input className="input" style={{ width: 120 }} value={r.rate} inputMode="decimal" aria-label="Rate"
               onChange={(e) => setFx((x) => x.map((y, j) => (j === i ? { ...y, rate: e.target.value } : y)))} />
-            <button className="btn small ghost danger" onClick={() => setFx((x) => x.filter((_, j) => j !== i))}>Убрать</button>
+            <button className="btn small ghost danger" onClick={() => setFx((x) => x.filter((_, j) => j !== i))}>Remove</button>
           </div>
         ))}
-        <div><button className="btn small" onClick={() => setFx((x) => [...x, { cur: '', rate: '' }])}>Добавить валюту</button></div>
+        <div><button className="btn small" onClick={() => setFx((x) => [...x, { cur: '', rate: '' }])}>Add currency</button></div>
         <div className="field" style={{ maxWidth: 260 }}>
-          <label htmlFor="kc">Валюта отчётов Keitaro</label>
+          <label htmlFor="kc">Keitaro report currency</label>
           <input id="kc" className="input" value={f.keitaro_currency} maxLength={3}
             onChange={(e) => setF((x) => ({ ...x, keitaro_currency: e.target.value.toUpperCase() }))} />
         </div>
@@ -131,34 +131,34 @@ function GeneralSettings() {
 
       <section className="panel panel-pad stack">
         <div>
-          <h2>Алерты в Telegram</h2>
-          {!data.tg_bot_configured && <div className="notice">Бот не настроен: добавь TG_BOT_TOKEN в переменные сервиса. Пока алерты видны только в разделе «Синхронизация».</div>}
+          <h2>Telegram alerts</h2>
+          {!data.tg_bot_configured && <div className="notice">Bot is not configured: add TG_BOT_TOKEN to the service variables. Until then alerts are only visible on the Sync page.</div>}
         </div>
-        <label className="check"><input type="checkbox" checked={f.alerts_enabled} onChange={(e) => setF((x) => ({ ...x, alerts_enabled: e.target.checked }))} />Отправлять алерты</label>
+        <label className="check"><input type="checkbox" checked={f.alerts_enabled} onChange={(e) => setF((x) => ({ ...x, alerts_enabled: e.target.checked }))} />Send alerts</label>
         <div className="grid2">
           <div className="field">
-            <label htmlFor="chat">ID чата или группы</label>
+            <label htmlFor="chat">Chat or group ID</label>
             <input id="chat" className="input" value={f.tg_chat_id} onChange={(e) => setF((x) => ({ ...x, tg_chat_id: e.target.value }))} placeholder="-1001234567890" />
-            <span className="hint">Добавь бота в группу, отправь там любое сообщение и возьми ID через @userinfobot или getUpdates.</span>
+            <span className="hint">Add the bot to the group, send any message there and get the ID via @userinfobot or getUpdates.</span>
           </div>
           <div className="field">
             <label>&nbsp;</label>
-            <div><button className="btn" onClick={testTg} disabled={!data.tg_bot_configured || !f.tg_chat_id.trim()}>Отправить тест</button></div>
+            <div><button className="btn" onClick={testTg} disabled={!data.tg_bot_configured || !f.tg_chat_id.trim()}>Send test</button></div>
           </div>
           <div className="field">
-            <label htmlFor="nr">Расход без регистраций за день, $</label>
+            <label htmlFor="nr">Daily spend without registrations, $</label>
             <input id="nr" className="input" value={f.noreg} inputMode="decimal" onChange={(e) => setF((x) => ({ ...x, noreg: e.target.value }))} />
-            <span className="hint">Кампания потратила столько сегодня, а регистраций 0. Ноль — не следить.</span>
+            <span className="hint">A campaign spent this much today with 0 registrations. Zero turns it off.</span>
           </div>
           <div className="field">
-            <label htmlFor="cp">Израсходован лимит кабинета, %</label>
+            <label htmlFor="cp">Ad account spend cap used, %</label>
             <input id="cp" className="input" value={f.cap} inputMode="numeric" onChange={(e) => setF((x) => ({ ...x, cap: e.target.value }))} />
-            <span className="hint">Предупредить, когда кабинет подходит к лимиту расходов. Ноль — не следить.</span>
+            <span className="hint">Warn when an ad account gets close to its spend cap. Zero turns it off.</span>
           </div>
         </div>
-        <div className="sub">Всегда приходят: токен профиля перестал работать, кабинет отключили или он снова активен.</div>
+        <div className="sub">Always sent: a profile token stopped working, the proxy is down, an ad account was disabled, re-enabled or removed from a profile.</div>
       </section>
-      <div><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Сохраняю…' : 'Сохранить настройки'}</button></div>
+      <div><button className="btn primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save settings'}</button></div>
     </>
   )
 }
@@ -190,7 +190,7 @@ function Users() {
     }
   }
   const remove = async (u: User) => {
-    if (!confirm(`Удалить пользователя ${u.login}?`)) return
+    if (!confirm(`Delete user ${u.login}?`)) return
     try {
       await api(`/api/users/${u.id}`, { method: 'DELETE' })
       reload()
@@ -203,34 +203,34 @@ function Users() {
     <section className="panel">
       <div className="panel-pad row" style={{ justifyContent: 'space-between' }}>
         <div>
-          <h2 style={{ margin: 0 }}>Пользователи</h2>
-          <div className="sub">Админ управляет профилями и настройками. Просмотр — только смотрит статистику; если указан байер, видит только его профили, кабинеты и алерты.</div>
+          <h2 style={{ margin: 0 }}>Users</h2>
+          <div className="sub">Admins manage profiles and settings. Viewers only see stats; a viewer with a buyer set sees only that buyer's profiles, ad accounts and alerts.</div>
         </div>
-        <button className="btn" onClick={() => setAdding(true)}>Добавить</button>
+        <button className="btn" onClick={() => setAdding(true)}>Add</button>
       </div>
       {error && <div className="panel-pad"><ErrorBox text={error} onRetry={reload} /></div>}
       <div className="table-scroll">
         <table className="t">
-          <thead><tr><th>Логин</th><th>Доступ</th><th>Байер</th><th /></tr></thead>
+          <thead><tr><th>Login</th><th>Role</th><th>Buyer</th><th /></tr></thead>
           <tbody>
             {data?.map((u) => (
               <tr key={u.id}>
-                <td>{u.login}{u.id === me.id && <span className="sub"> (это ты)</span>}</td>
+                <td>{u.login}{u.id === me.id && <span className="sub"> (you)</span>}</td>
                 <td>
-                  <select className="input" value={u.role} disabled={u.id === me.id} onChange={(e) => setRole(u, e.target.value as Role)} aria-label="Доступ">
-                    <option value="admin">Админ</option>
-                    <option value="viewer">Просмотр</option>
+                  <select className="input" value={u.role} disabled={u.id === me.id} onChange={(e) => setRole(u, e.target.value as Role)} aria-label="Role">
+                    <option value="admin">Admin</option>
+                    <option value="viewer">Viewer</option>
                   </select>
                 </td>
                 <td>
-                  {u.role === 'admin' ? <span className="sub">все</span> : (
+                  {u.role === 'admin' ? <span className="sub">all</span> : (
                     <BuyerSelect value={u.buyer} buyers={buyers} onChange={(b) => setBuyer(u, b)} />
                   )}
                 </td>
                 <td>
                   <div className="row" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
-                    <button className="btn small" onClick={() => setResetFor(u)}>Сменить пароль</button>
-                    {u.id !== me.id && <button className="btn small danger" onClick={() => remove(u)}>Удалить</button>}
+                    <button className="btn small" onClick={() => setResetFor(u)}>Change password</button>
+                    {u.id !== me.id && <button className="btn small danger" onClick={() => remove(u)}>Delete</button>}
                   </div>
                 </td>
               </tr>
@@ -238,8 +238,8 @@ function Users() {
           </tbody>
         </table>
       </div>
-      {adding && <UserForm buyers={buyers} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); toast('Пользователь добавлен') }} />}
-      {resetFor && <UserForm user={resetFor} onClose={() => setResetFor(null)} onSaved={() => { setResetFor(null); toast('Пароль изменён') }} />}
+      {adding && <UserForm buyers={buyers} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); reload(); toast('User added') }} />}
+      {resetFor && <UserForm user={resetFor} onClose={() => setResetFor(null)} onSaved={() => { setResetFor(null); toast('Password changed') }} />}
     </section>
   )
 }
@@ -247,8 +247,8 @@ function Users() {
 function BuyerSelect({ value, buyers, onChange }: { value: string; buyers: string[]; onChange: (b: string) => void }) {
   const opts = Array.from(new Set([...buyers, value].filter(Boolean)))
   return (
-    <select className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Байер">
-      <option value="">все байеры</option>
+    <select className="input" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Buyer">
+      <option value="">all buyers</option>
       {opts.map((b) => <option key={b} value={b}>{b}</option>)}
     </select>
   )
@@ -262,7 +262,7 @@ function UserForm({ user, buyers = [], onClose, onSaved }: { user?: User; buyers
   const [buyer, setBuyer] = useState('')
   const [busy, setBusy] = useState(false)
   const save = async () => {
-    if (password.length < 8) return toast('Пароль — минимум 8 символов', 'error')
+    if (password.length < 8) return toast('Password must be at least 8 characters', 'error')
     setBusy(true)
     try {
       if (user) await api(`/api/users/${user.id}`, { method: 'PATCH', body: { password } })
@@ -275,30 +275,30 @@ function UserForm({ user, buyers = [], onClose, onSaved }: { user?: User; buyers
     }
   }
   return (
-    <Modal title={user ? `Пароль для ${user.login}` : 'Новый пользователь'} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Отмена</button><button className="btn primary" onClick={save} disabled={busy}>Сохранить</button></>}>
+    <Modal title={user ? `Password for ${user.login}` : 'New user'} onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>Save</button></>}>
       {!user && (
         <div className="grid2">
-          <div className="field"><label htmlFor="ul">Логин</label><input id="ul" className="input" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></div>
+          <div className="field"><label htmlFor="ul">Login</label><input id="ul" className="input" value={login} onChange={(e) => setLogin(e.target.value)} autoComplete="off" /></div>
           <div className="field">
-            <label htmlFor="ur">Доступ</label>
+            <label htmlFor="ur">Role</label>
             <select id="ur" className="input" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-              <option value="viewer">Просмотр</option><option value="admin">Админ</option>
+              <option value="viewer">Viewer</option><option value="admin">Admin</option>
             </select>
           </div>
           {role === 'viewer' && (
             <div className="field">
-              <label>Байер</label>
+              <label>Buyer</label>
               <BuyerSelect value={buyer} buyers={buyers} onChange={setBuyer} />
-              <span className="hint">Если выбран — пользователь видит только профили этого байера (как написано в поле «Байер» у профиля).</span>
+              <span className="hint">If set, the user only sees this buyer's profiles (matched against the Buyer field of each profile).</span>
             </div>
           )}
         </div>
       )}
       <div className="field">
-        <label htmlFor="up">Пароль</label>
+        <label htmlFor="up">Password</label>
         <input id="up" className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-        <span className="hint">Минимум 8 символов.</span>
+        <span className="hint">At least 8 characters.</span>
       </div>
     </Modal>
   )
@@ -309,23 +309,23 @@ function ChangePassword() {
   const [oldPw, setOld] = useState('')
   const [newPw, setNew] = useState('')
   const save = async () => {
-    if (newPw.length < 8) return toast('Новый пароль — минимум 8 символов', 'error')
+    if (newPw.length < 8) return toast('The new password must be at least 8 characters', 'error')
     try {
       await api('/api/auth/password', { method: 'POST', body: { old_password: oldPw, new_password: newPw } })
       setOld(''); setNew('')
-      toast('Пароль изменён')
+      toast('Password changed')
     } catch (e) {
       toast((e as Error).message, 'error')
     }
   }
   return (
     <section className="panel panel-pad stack">
-      <h2 style={{ margin: 0 }}>Мой пароль</h2>
+      <h2 style={{ margin: 0 }}>My password</h2>
       <div className="grid2">
-        <div className="field"><label htmlFor="op">Текущий</label><input id="op" className="input" type="password" value={oldPw} onChange={(e) => setOld(e.target.value)} autoComplete="current-password" /></div>
-        <div className="field"><label htmlFor="np">Новый</label><input id="np" className="input" type="password" value={newPw} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" /></div>
+        <div className="field"><label htmlFor="op">Current</label><input id="op" className="input" type="password" value={oldPw} onChange={(e) => setOld(e.target.value)} autoComplete="current-password" /></div>
+        <div className="field"><label htmlFor="np">New</label><input id="np" className="input" type="password" value={newPw} onChange={(e) => setNew(e.target.value)} autoComplete="new-password" /></div>
       </div>
-      <div><button className="btn" onClick={save}>Сменить пароль</button></div>
+      <div><button className="btn" onClick={save}>Change password</button></div>
     </section>
   )
 }

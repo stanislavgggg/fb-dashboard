@@ -12,7 +12,7 @@ from .db import AdAccount, AlertLog, CampaignDay, KeitaroDay, Profile, Session, 
 from .fb import ACTIVE_STATUSES, ACCOUNT_STATUS
 
 log = logging.getLogger("alerts")
-TG_MAX = 3500  # Telegram hard limit is 4096; keep headroom for the "...и ещё" tail
+TG_MAX = 3500  # Telegram hard limit is 4096; keep headroom for the "...and N more" tail
 NET_FAILS_TO_ALERT = 2  # consecutive proxy/network failures before we alert
 
 
@@ -38,11 +38,11 @@ def account_status_changed(s, acc: AdAccount, old_status: int | None, profile: P
     was_active, now_active = old_status in ACTIVE_STATUSES, acc.status in ACTIVE_STATUSES
     if was_active and not now_active:
         emit(s, f"acc_down:{acc.id}:{acc.status}:{date.today()}",
-             f"🔴 Кабинет <b>{html.escape(acc.name)}</b> ({acc.id}) — {ACCOUNT_STATUS.get(acc.status, acc.status)}\n"
-             f"Профиль: {html.escape(profile.name)} · {html.escape(profile.supplier or '—')}", "crit")
+             f"🔴 Ad account <b>{html.escape(acc.name)}</b> ({acc.id}) — {ACCOUNT_STATUS.get(acc.status, acc.status)}\n"
+             f"Profile: {html.escape(profile.name)} · {html.escape(profile.supplier or '—')}", "crit")
     elif not was_active and now_active:
         emit(s, f"acc_up:{acc.id}:{date.today()}",
-             f"🟢 Кабинет <b>{html.escape(acc.name)}</b> ({acc.id}) снова активен", "info")
+             f"🟢 Ad account <b>{html.escape(acc.name)}</b> ({acc.id}) is active again", "info")
 
 
 def accounts_unshared(s, profile: Profile, accs: list[AdAccount]):
@@ -50,21 +50,21 @@ def accounts_unshared(s, profile: Profile, accs: list[AdAccount]):
     if not accs:
         return
     names = ", ".join(f"{html.escape(a.name)} ({a.id})" for a in accs[:10])
-    more = f" и ещё {len(accs) - 10}" if len(accs) > 10 else ""
+    more = f" and {len(accs) - 10} more" if len(accs) > 10 else ""
     emit(s, f"acc_gone:{profile.id}:{date.today()}:{len(accs)}",
-         f"⚪ Из профиля <b>{html.escape(profile.name)}</b> пропали кабинеты ({len(accs)}): {names}{more}", "warn")
+         f"⚪ Ad accounts disappeared from profile <b>{html.escape(profile.name)}</b> ({len(accs)}): {names}{more}", "warn")
 
 
 def token_died(s, profile: Profile, error: str):
     emit(s, f"token:{profile.id}:{date.today()}",
-         f"🔑 Токен профиля <b>{html.escape(profile.name)}</b> ({html.escape(profile.supplier or '—')}) не работает:\n"
+         f"🔑 Token of profile <b>{html.escape(profile.name)}</b> ({html.escape(profile.supplier or '—')}) stopped working:\n"
          f"{html.escape(error[:300])}", "crit")
 
 
 def network_failing(s, profile: Profile, error: str):
     emit(s, f"net:{profile.id}:{date.today()}",
-         f"🌐 Профиль <b>{html.escape(profile.name)}</b> ({html.escape(profile.supplier or '—')}) не отвечает "
-         f"{profile.net_fails} раз подряд — скорее всего умер прокси:\n{html.escape(error[:300])}", "crit")
+         f"🌐 Profile <b>{html.escape(profile.name)}</b> ({html.escape(profile.supplier or '—')}) failed "
+         f"{profile.net_fails} times in a row — the proxy is most likely dead:\n{html.escape(error[:300])}", "crit")
 
 
 def check_thresholds(s, fx: dict, settings: dict):
@@ -90,20 +90,20 @@ def check_thresholds(s, fx: dict, settings: dict):
             usd = spend * fx.get(cur, 1.0)
             if usd >= limit and not regs.get((day, cid)):
                 emit(s, f"noreg:{cid}:{day}",
-                     f"🟠 <b>{html.escape(cname)}</b> ({html.escape(acc_name)}): потрачено ${usd:.0f} сегодня, регистраций 0")
+                     f"🟠 <b>{html.escape(cname)}</b> ({html.escape(acc_name)}): spent ${usd:.0f} today, 0 registrations")
     # 2) account close to its spend cap
     ratio = float(settings.get("alert_cap_ratio") or 0)
     if ratio > 0:
         for acc in s.scalars(select(AdAccount).where(AdAccount.spend_cap > 0, AdAccount.missing.is_(False))):
             if acc.status in ACTIVE_STATUSES and acc.amount_spent >= acc.spend_cap * ratio:
                 emit(s, f"cap:{acc.id}:{acc.spend_cap}",
-                     f"🟡 Кабинет <b>{html.escape(acc.name)}</b>: израсходовано {acc.amount_spent:.0f} из лимита "
+                     f"🟡 Ad account <b>{html.escape(acc.name)}</b>: spent {acc.amount_spent:.0f} of the spend cap "
                      f"{acc.spend_cap:.0f} {acc.currency}")
 
 
 def send_telegram(chat_id: str, text: str) -> tuple[bool, str]:
     if not config.TG_BOT_TOKEN or not chat_id:
-        return False, "TG_BOT_TOKEN или chat_id не заданы"
+        return False, "TG_BOT_TOKEN or chat_id is not set"
     try:
         r = httpx.post(f"https://api.telegram.org/bot{config.TG_BOT_TOKEN}/sendMessage",
                        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
@@ -158,7 +158,7 @@ def flush(max_messages: int = 3):
             text = "\n\n".join(a.text[:TG_MAX] for a in chunk)
             if i == max_messages - 1 and len(chunks) > max_messages:
                 left = sum(len(c) for c in chunks[max_messages:])
-                text += f"\n\n…и ещё {left} — смотри дашборд"
+                text += f"\n\n…and {left} more — see the dashboard"
             ok, err = send_telegram(str(settings["tg_chat_id"]), text)
             if not ok:
                 log.warning("telegram send failed: %s", err)

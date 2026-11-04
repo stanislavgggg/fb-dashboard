@@ -15,13 +15,13 @@ def run():
     today = date.today()
     with Session() as s:
         if s.query(Profile).count():
-            print("В базе уже есть профили — демо не добавляю")
+            print("The database already has profiles — demo not added")
             return
         suppliers = [("Agency Alpha", "Stefan"), ("Agency Alpha", "Stefan"), ("Nova Accounts", "Stefan"), ("Kings Ads", "Milos")]
         geos = ["LT", "LV", "ES", "HR", "RS"]
         n = 0
         for i, (sup, buyer) in enumerate(suppliers, 1):
-            p = Profile(name=f"{sup} — логин {i}", supplier=sup, buyer=buyer, token_enc=enc("EAABdemo" + "x" * 40),
+            p = Profile(name=f"{sup} — login {i}", supplier=sup, buyer=buyer, token_enc=enc("EAABdemo" + "x" * 40),
                         proxy_enc=enc(f"http://u:p@10.0.0.{i}:8000"), token_ok=i != 4, fb_user=f"Agency user {i}",
                         last_sync_at=utcnow(), last_error="[190] Error validating access token: Session has expired" if i == 4 else "")
             s.add(p)
@@ -51,14 +51,14 @@ def run():
                         deps = int(regs * rnd.uniform(0.15, 0.4))
                         s.add(KeitaroDay(day=day, sub_value=cid, clicks=int(clicks * 0.9), regs=regs, deps=deps,
                                          revenue=deps * rnd.uniform(40, 110)))
-        s.add(KeitaroDay(day=today, sub_value="(пусто)", clicks=40, regs=6, deps=2, revenue=150))
+        s.add(KeitaroDay(day=today, sub_value="(empty)", clicks=40, regs=6, deps=2, revenue=150))
         s.add(SyncRun(trigger="schedule", days=3, started_at=utcnow() - timedelta(minutes=12),
                       finished_at=utcnow() - timedelta(minutes=11), ok=False,
-                      message="Agency Alpha — логин 1: 3 каб., 9 строк | Kings Ads — логин 4: Error validating access token | Keitaro: 120 строк"))
-        s.add(AlertLog(key="demo1", level="crit", text="🔑 Токен профиля <b>Kings Ads — логин 4</b> не работает"))
-        s.add(AlertLog(key="demo2", level="warn", text="🟠 <b>LT casino broad</b>: потрачено $62 сегодня, регистраций 0"))
+                      message="Agency Alpha — login 1: 3 accounts, 9 rows | Kings Ads — login 4: Error validating access token | Keitaro: 120 rows over 3 days"))
+        s.add(AlertLog(key="demo1", level="crit", text="🔑 Token of profile <b>Kings Ads — login 4</b> stopped working"))
+        s.add(AlertLog(key="demo2", level="warn", text="🟠 <b>LT casino broad</b>: spent $62 today, 0 registrations"))
         s.commit()
-    print(f"Демо готово: {n} кабинетов")
+    print(f"Demo ready: {n} ad accounts")
 
 
 if __name__ == "__main__":

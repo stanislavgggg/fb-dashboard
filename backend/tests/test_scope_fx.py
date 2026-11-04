@@ -117,7 +117,7 @@ def test_fx_refresh_uses_account_currencies_and_manual_overrides(monkeypatch):
         assert st["fx_updated_at"] == date.today().isoformat() and st["fx_source"] == "auto"
     # second call the same day is a no-op
     ok, msg = fx.refresh()
-    assert ok and "уже" in msg and len(calls) == 1
+    assert ok and "already" in msg and len(calls) == 1
 
 
 def test_fx_refresh_disabled_and_failure(monkeypatch):
@@ -125,7 +125,7 @@ def test_fx_refresh_disabled_and_failure(monkeypatch):
         from app.db import set_settings
         set_settings(s, {"fx_auto": False})
         s.commit()
-    assert fx.refresh() == (True, "авто-курсы выключены")
+    assert fx.refresh() == (True, "automatic rates are off")
     monkeypatch.setattr(fx, "fetch", lambda cur: (_ for _ in ()).throw(httpx.ConnectError("down")))
     ok, msg = fx.refresh(force=True)
     assert not ok and "down" in msg

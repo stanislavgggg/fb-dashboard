@@ -80,11 +80,11 @@ def build(s, since: date, until: date, group: str, fx: dict, k_rate: float,
         (day, cid, cname, _sp, _im, _cl, _fr, acc_id, acc_name, _cur, acc_status, acc_missing,
          pid, pname, sup, buy, acc_geo) = r
         if group == "supplier":
-            return sup or "(без поставщика)", {"label": sup or "(без поставщика)"}
+            return sup or "(no supplier)", {"label": sup or "(no supplier)"}
         if group == "geo":
-            return acc_geo or "(без гео)", {"label": acc_geo or "(без гео)"}
+            return acc_geo or "(no geo)", {"label": acc_geo or "(no geo)"}
         if group == "buyer":
-            return buy or "(без байера)", {"label": buy or "(без байера)"}
+            return buy or "(no buyer)", {"label": buy or "(no buyer)"}
         if group == "profile":
             return str(pid), {"label": pname, "supplier": sup, "buyer": buy, "profile_id": pid}
         if group == "account":

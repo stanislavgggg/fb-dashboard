@@ -90,7 +90,7 @@ def test_sync_and_stats(respx_mock):
         {"day": TODAY.isoformat(), "sub_id_1": "zzz", "clicks": 3, "leads": 1, "sales": 1, "revenue": 60},
     ])
     msg = sync_all(3, "test")
-    assert "2 каб." in msg
+    assert "2 accounts" in msg
 
     with Session() as s:
         assert {a.id for a in s.scalars(select(AdAccount))} == {"act_1", "act_2"}
@@ -107,7 +107,7 @@ def test_sync_and_stats(respx_mock):
         tot = data["total"]
         assert tot["spend"] == pytest.approx(180) and tot["regs"] == 9 and tot["deps"] == 3
         unmatched = {u["sub_value"] for u in data["unmatched"]}
-        assert unmatched == {"(пусто)", "zzz"}
+        assert unmatched == {"(empty)", "zzz"}
 
         acc_view = stats.build(s, TODAY - timedelta(days=2), TODAY, "account", fx, 1.0)
         a1 = next(r for r in acc_view["rows"] if r["key"] == "act_1")
@@ -163,7 +163,7 @@ def test_one_bad_account_does_not_break_others(respx_mock):
              "act_2": {"error": {"message": "Ad account has been disabled", "code": 200}}})
     mock_kt(respx_mock, [])
     msg = sync_all(3, "t")
-    assert "ошибок 1" in msg
+    assert "errors: 1" in msg
     with Session() as s:
         assert s.get(AdAccount, "act_2").last_error
         assert s.scalar(select(CampaignDay).where(CampaignDay.account_id == "act_1"))
@@ -178,7 +178,7 @@ def test_rate_limit_is_retried(respx_mock):
     ])
     respx_mock.get(f"{G}/me/adaccounts").mock(return_value=httpx.Response(200, json={"data": []}))
     mock_kt(respx_mock, [])
-    assert "0 каб." in sync_all(3, "t")
+    assert "0 accounts" in sync_all(3, "t")
 
 
 @respx.mock(assert_all_called=False)
@@ -217,7 +217,7 @@ def test_keitaro_down_does_not_lose_fb_data(respx_mock):
     mock_fb(respx_mock, [acc("act_1", "Cab")], {"act_1": [insight("c1", "A", 10)]})
     respx_mock.post(KT).mock(return_value=httpx.Response(502))
     msg = sync_all(3, "t")
-    assert "Keitaro: ошибка" in msg
+    assert "Keitaro: error" in msg
     with Session() as s:
         assert s.scalar(select(CampaignDay))
         assert s.scalar(select(SyncRun)).ok is False
@@ -231,7 +231,7 @@ def test_stale_run_is_closed():
     with respx.mock(assert_all_called=False) as r:
         mock_kt(r, [])
         msg = sync_all(1, "t")
-    assert "уже идёт" not in msg
+    assert "already running" not in msg
     with Session() as s:
         assert all(run.finished_at for run in s.scalars(select(SyncRun)))
 

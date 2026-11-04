@@ -44,10 +44,10 @@ def test_startup_closes_fresh_unfinished_run():
     sync.on_startup()
     with respx.mock(assert_all_called=False) as r:
         mock_kt(r, [])
-        assert "уже идёт" not in sync_all(1, "startup")
+        assert "already running" not in sync_all(1, "startup")
     with Session() as s:
         runs = s.scalars(select(SyncRun).order_by(SyncRun.id)).all()
-        assert runs[0].finished_at and "рестарт" in runs[0].message and runs[1].ok is True
+        assert runs[0].finished_at and "restart" in runs[0].message and runs[1].ok is True
 
 
 # ---- 3. rotated SECRET_KEY: profiles page still opens, sync reports it
@@ -62,13 +62,13 @@ def test_rotated_key_does_not_break_profiles_page(monkeypatch):
         assert r.status_code == 200
         assert r.json()[0]["key_changed"] is True and r.json()[0]["token_ok"] is False
         chk = c.post("/api/profiles/check", json={"profile_id": r.json()[0]["id"]})
-        assert chk.json()["ok"] is False and "ключ" in chk.json()["error"]
+        assert chk.json()["ok"] is False and "key changed" in chk.json()["error"]
     with respx.mock(assert_all_called=False) as r:
         mock_kt(r, [])
         msg = sync_all(1, "t")
-    assert "ключ" in msg
+    assert "key changed" in msg
     with Session() as s:
-        assert "ключ" in s.scalar(select(Profile)).last_error
+        assert "key changed" in s.scalar(select(Profile)).last_error
 
 
 # ---- 4. Telegram digest is split by length and never gets stuck
@@ -146,7 +146,7 @@ def test_dead_proxy_alerts(respx_mock):
     with Session() as s:
         assert s.get(Profile, pid).net_fails == 2
         a = s.scalar(select(AlertLog).where(AlertLog.key.like("net:%")))
-        assert a and "прокси" in a.text
+        assert a and "proxy" in a.text
     # recovers: counter resets
     respx_mock.reset()
     mock_fb(respx_mock, [], {})
@@ -167,7 +167,7 @@ def test_transient_empty_account_list(respx_mock):
     mock_fb(respx_mock, [], {})
     mock_kt(respx_mock, [])
     msg = sync_all(1, "t")
-    assert "оставил как было" in msg
+    assert "kept as is" in msg
     with Session() as s:
         assert s.get(AdAccount, "act_1").missing is False
 
@@ -217,9 +217,9 @@ def test_bad_payload_one_account(respx_mock):
              "act_2": [insight("c2", "B", 5)]})
     mock_kt(respx_mock, [])
     msg = sync_all(1, "t")
-    assert "ошибок 1" in msg
+    assert "errors: 1" in msg
     with Session() as s:
-        assert "ошибка обработки" in s.get(AdAccount, "act_1").last_error
+        assert "processing error" in s.get(AdAccount, "act_1").last_error
         assert s.scalar(select(CampaignDay).where(CampaignDay.account_id == "act_2"))
         assert s.scalar(select(Profile)).last_sync_at is not None
 

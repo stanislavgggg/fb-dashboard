@@ -6,12 +6,12 @@ import { dateTime } from '../format'
 import type { Alert, Health, SyncRun } from '../types'
 
 const LEVEL = {
-  ok: { cls: 'ok', label: 'Норма' }, warn: { cls: 'warn', label: 'Внимание' }, fail: { cls: 'bad', label: 'Проблема' },
+  ok: { cls: 'ok', label: 'OK' }, warn: { cls: 'warn', label: 'Warning' }, fail: { cls: 'bad', label: 'Problem' },
 } as const
 
 const TRIGGERS: Record<string, string> = {
-  schedule: 'По расписанию', startup: 'При запуске', manual: 'Вручную',
-  manual_profile: 'Вручную, один профиль', new_profile: 'Новый профиль', cli: 'Из консоли',
+  schedule: 'Scheduled', startup: 'On startup', manual: 'Manual',
+  manual_profile: 'Manual, one profile', new_profile: 'New profile', cli: 'From console',
 }
 
 export default function SyncPage() {
@@ -33,7 +33,7 @@ export default function SyncPage() {
   const start = async () => {
     try {
       await api('/api/sync', { method: 'POST', body: { days } })
-      toast('Синхронизация запущена')
+      toast('Sync started')
       setTimeout(runs.reload, 800)
     } catch (e) {
       toast((e as Error).message, 'error')
@@ -43,14 +43,14 @@ export default function SyncPage() {
   return (
     <div className="stack">
       <div className="page-head">
-        <h1>Синхронизация и алерты</h1>
+        <h1>Sync and alerts</h1>
         {me.role === 'admin' && (
           <div className="row">
-            <label htmlFor="days" className="sub">За сколько дней</label>
+            <label htmlFor="days" className="sub">Days to fetch</label>
             <select id="days" className="input" value={days} onChange={(e) => setDays(Number(e.target.value))}>
               {[1, 3, 7, 14, 30, 60, 90].map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
-            <button className="btn primary" onClick={start} disabled={running}>{running ? 'Идёт…' : 'Запустить'}</button>
+            <button className="btn primary" onClick={start} disabled={running}>{running ? 'Running…' : 'Run'}</button>
           </div>
         )}
       </div>
@@ -59,10 +59,10 @@ export default function SyncPage() {
         <section className="panel panel-pad">
           <div className="row" style={{ justifyContent: 'space-between' }}>
             <h2 style={{ margin: 0 }}>
-              Здоровье сервиса{' '}
+              Service health{' '}
               {health.data && <span className={`badge ${LEVEL[health.data.status].cls}`}>{LEVEL[health.data.status].label}</span>}
             </h2>
-            <button className="btn small" onClick={health.reload} disabled={health.loading}>Проверить</button>
+            <button className="btn small" onClick={health.reload} disabled={health.loading}>Check</button>
           </div>
           {health.error && <ErrorBox text={health.error} onRetry={health.reload} />}
           {health.loading && !health.data && <Spinner />}
@@ -81,41 +81,41 @@ export default function SyncPage() {
       )}
 
       <section className="panel panel-pad">
-        <h2>Алерты</h2>
+        <h2>Alerts</h2>
         {alerts.error && <ErrorBox text={alerts.error} onRetry={alerts.reload} />}
         {alerts.loading && !alerts.data && <Spinner />}
-        {alerts.data?.length === 0 && <div className="sub">Пока тихо — ни одного алерта.</div>}
+        {alerts.data?.length === 0 && <div className="sub">All quiet — no alerts yet.</div>}
         {alerts.data?.map((a) => (
           <div className="alert-item" key={a.key}>
             <span className={`badge ${a.level === 'crit' ? 'bad' : a.level === 'info' ? 'ok' : 'warn'}`}>
-              {a.level === 'crit' ? 'Важно' : a.level === 'info' ? 'Инфо' : 'Внимание'}
+              {a.level === 'crit' ? 'Critical' : a.level === 'info' ? 'Info' : 'Warning'}
             </span>
             {/* alert text is generated server-side from escaped values; strip tags for display */}
             <span className="txt">{a.text.replace(/<[^>]+>/g, '')}</span>
-            <span className="when">{dateTime(a.created_at)}{a.sent ? '' : ' · не отправлен'}</span>
+            <span className="when">{dateTime(a.created_at)}{a.sent ? '' : ' · not sent'}</span>
           </div>
         ))}
       </section>
 
       <section className="panel">
-        <div className="panel-pad"><h2 style={{ margin: 0 }}>Журнал запусков</h2></div>
+        <div className="panel-pad"><h2 style={{ margin: 0 }}>Sync log</h2></div>
         {runs.error && <div className="panel-pad"><ErrorBox text={runs.error} onRetry={runs.reload} /></div>}
         <div className="table-scroll">
           <table className="t">
-            <thead><tr><th>Начало</th><th>Источник</th><th className="n">Дней</th><th>Результат</th><th>Детали</th></tr></thead>
+            <thead><tr><th>Started</th><th>Trigger</th><th className="n">Days</th><th>Result</th><th>Details</th></tr></thead>
             <tbody>
-              {runs.data?.length === 0 && <tr><td colSpan={5}><div className="empty">Запусков ещё не было</div></td></tr>}
+              {runs.data?.length === 0 && <tr><td colSpan={5}><div className="empty">No runs yet</div></td></tr>}
               {runs.data?.map((r) => (
                 <tr key={r.id}>
                   <td>{dateTime(r.started_at)}</td>
                   <td>{TRIGGERS[r.trigger] || r.trigger}</td>
                   <td className="n">{r.days}</td>
                   <td>
-                    {!r.finished_at ? <span className="row"><Spinner /> идёт</span>
-                      : r.ok ? <span className="badge ok">Успешно</span> : <span className="badge bad">С ошибками</span>}
+                    {!r.finished_at ? <span className="row"><Spinner /> running</span>
+                      : r.ok ? <span className="badge ok">Success</span> : <span className="badge bad">With errors</span>}
                   </td>
                   <td style={{ whiteSpace: 'normal', minWidth: 300 }}>
-                    {r.message.split(' | ').map((m, i) => <div key={i} className={/ошибк|error|не работает/i.test(m) ? 'err-text' : ''}>{m}</div>)}
+                    {r.message.split(' | ').map((m, i) => <div key={i} className={/error|stopped working|not updated|proxy|network|key changed/i.test(m) ? 'err-text' : ''}>{m}</div>)}
                   </td>
                 </tr>
               ))}

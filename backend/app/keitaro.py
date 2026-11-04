@@ -47,7 +47,7 @@ def report(since: date, until: date) -> list[dict]:
         for row in page:
             value = str(row.get(sub) or "").strip()
             if not value or value.startswith("{"):  # empty or unresolved macro like {{campaign.id}}
-                value = "(пусто)"
+                value = "(empty)"
             rows.append({
                 "day": date.fromisoformat(str(row["day"])[:10]),
                 "sub_value": value[:200],

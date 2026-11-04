@@ -69,7 +69,7 @@ def _dates(since: date | None, until: date | None) -> tuple[date, date]:
     if since > until:
         since, until = until, since
     if (until - since).days > 366:
-        raise HTTPException(400, "Период не больше года")
+        raise HTTPException(400, "The period can't be longer than a year")
     return since, until
 
 
@@ -109,12 +109,12 @@ class LoginIn(BaseModel):
 def login(body: LoginIn, request: Request):
     ip = request.client.host if request.client else "?"
     if auth.too_many_attempts(ip):
-        raise HTTPException(429, "Слишком много попыток, подожди 10 минут")
+        raise HTTPException(429, "Too many attempts, wait 10 minutes")
     with Session() as s:
         user = s.scalar(select(User).where(User.login == body.login.strip()))
     if not user or not auth.check_password(body.password, user.password_hash):
         auth.note_failure(ip)
-        raise HTTPException(401, "Неверный логин или пароль")
+        raise HTTPException(401, "Wrong login or password")
     auth.note_success(ip)
     request.session["uid"], request.session["sv"] = user.id, user.session_version
     return {"id": user.id, "login": user.login, "role": user.role, "buyer": user.buyer}
@@ -141,7 +141,7 @@ def change_password(body: PasswordIn, request: Request, user: User = Depends(aut
     with Session() as s:
         u = s.get(User, user.id)
         if not auth.check_password(body.old_password, u.password_hash):
-            raise HTTPException(400, "Старый пароль неверный")
+            raise HTTPException(400, "Current password is wrong")
         u.password_hash = auth.hash_password(body.new_password)
         u.session_version = (u.session_version or 1) + 1  # other devices get logged out
         s.commit()
@@ -269,7 +269,7 @@ def patch_account(acc_id: str, body: AccountPatch, user: User = Depends(auth.adm
     with Session() as s:
         a = s.get(AdAccount, acc_id)
         if not a:
-            raise HTTPException(404, "Кабинет не найден")
+            raise HTTPException(404, "Ad account not found")
         if body.label is not None:
             a.label = body.label.strip()[:200]
         if body.geo is not None:
@@ -294,7 +294,7 @@ def _clean_token(t: str) -> str:
     if t.lower().startswith("bearer "):
         t = t[7:].strip()
     if len(t) < 20 or " " in t:
-        raise HTTPException(400, "Токен выглядит неправильно")
+        raise HTTPException(400, "The token doesn't look right")
     return t
 
 
@@ -323,7 +323,7 @@ def list_profiles(user: User = Depends(auth.current_user)):
 @app.post("/api/profiles")
 def create_profile(body: ProfileIn, user: User = Depends(auth.admin_user)):
     if not body.token:
-        raise HTTPException(400, "Нужен токен")
+        raise HTTPException(400, "A token is required")
     token, proxy = _clean_token(body.token), _clean_proxy(body.proxy)
     with Session() as s:
         p = Profile(name=body.name.strip(), supplier=body.supplier.strip(), buyer=body.buyer.strip(),
@@ -341,7 +341,7 @@ def update_profile(pid: int, body: ProfileIn, user: User = Depends(auth.admin_us
     with Session() as s:
         p = s.get(Profile, pid)
         if not p:
-            raise HTTPException(404, "Профиль не найден")
+            raise HTTPException(404, "Profile not found")
         p.name, p.supplier, p.buyer = body.name.strip(), body.supplier.strip(), body.buyer.strip()
         p.notes, p.active = body.notes, body.active
         changed = False
@@ -362,7 +362,7 @@ def delete_profile(pid: int, user: User = Depends(auth.admin_user)):
     with Session() as s:
         p = s.get(Profile, pid)
         if not p:
-            raise HTTPException(404, "Профиль не найден")
+            raise HTTPException(404, "Profile not found")
         acc_ids = s.scalars(select(AdAccount.id).where(AdAccount.profile_id == pid)).all()
         if acc_ids:
             s.execute(delete(CampaignDay).where(CampaignDay.account_id.in_(acc_ids)))
@@ -384,7 +384,7 @@ def check_profile(body: CheckIn, user: User = Depends(auth.admin_user)):
         with Session() as s:
             p = s.get(Profile, body.profile_id)
             if not p:
-                raise HTTPException(404, "Профиль не найден")
+                raise HTTPException(404, "Profile not found")
             try:
                 token = _clean_token(body.token) if body.token else dec(p.token_enc)
                 proxy = _clean_proxy(body.proxy) if body.proxy is not None else dec(p.proxy_enc)
@@ -392,7 +392,7 @@ def check_profile(body: CheckIn, user: User = Depends(auth.admin_user)):
                 return {"ok": False, "error": KEY_CHANGED}
     else:
         if not body.token:
-            raise HTTPException(400, "Нужен токен")
+            raise HTTPException(400, "A token is required")
         token, proxy = _clean_token(body.token), _clean_proxy(body.proxy)
     client = FBClient(token, proxy, timeout=15, retries=0)  # a check must answer fast, not hang for minutes
     try:
@@ -401,7 +401,7 @@ def check_profile(body: CheckIn, user: User = Depends(auth.admin_user)):
     except FBError as e:
         return {"ok": False, "error": str(e), "code": e.code}
     except Exception as e:
-        return {"ok": False, "error": f"Прокси или сеть: {e}"}
+        return {"ok": False, "error": f"Proxy or network: {e}"}
     finally:
         client.close()
     return {"ok": True, "user": me_.get("name"), "accounts": [
@@ -412,7 +412,7 @@ def check_profile(body: CheckIn, user: User = Depends(auth.admin_user)):
 @app.post("/api/profiles/{pid}/sync")
 def sync_one(pid: int, days: int = 7, user: User = Depends(auth.admin_user)):
     if not run_in_background(days, "manual_profile", [pid]):
-        raise HTTPException(409, "Синхронизация уже идёт")
+        raise HTTPException(409, "Sync is already running")
     return {"started": True}
 
 
@@ -424,7 +424,7 @@ class SyncIn(BaseModel):
 @app.post("/api/sync")
 def sync_now(body: SyncIn, user: User = Depends(auth.admin_user)):
     if not run_in_background(body.days, "manual"):
-        raise HTTPException(409, "Синхронизация уже идёт")
+        raise HTTPException(409, "Sync is already running")
     return {"started": True}
 
 
@@ -528,9 +528,9 @@ def test_telegram(body: TgTestIn | None = None, user: User = Depends(auth.admin_
     if not chat:
         with Session() as s:
             chat = str(get_settings(s).get("tg_chat_id") or "")
-    ok, err = alerts.send_telegram(chat, "✅ Тест: алерты FB-дашборда работают")
+    ok, err = alerts.send_telegram(chat, "✅ Test: FB dashboard alerts are working")
     if not ok:
-        raise HTTPException(400, f"Не отправилось: {err}")
+        raise HTTPException(400, f"Not sent: {err}")
     return {"ok": True}
 
 
@@ -557,10 +557,10 @@ def list_users(user: User = Depends(auth.admin_user)):
 @app.post("/api/users")
 def create_user(body: UserIn, user: User = Depends(auth.admin_user)):
     if body.role not in ("admin", "viewer"):
-        raise HTTPException(400, "Роль: admin или viewer")
+        raise HTTPException(400, "Role must be admin or viewer")
     with Session() as s:
         if s.scalar(select(User.id).where(User.login == body.login.strip())):
-            raise HTTPException(400, "Такой логин уже есть")
+            raise HTTPException(400, "This login already exists")
         s.add(User(login=body.login.strip(), password_hash=auth.hash_password(body.password), role=body.role,
                    buyer=body.buyer.strip()))
         s.commit()
@@ -572,12 +572,12 @@ def patch_user(uid: int, body: UserPatch, user: User = Depends(auth.admin_user))
     with Session() as s:
         u = s.get(User, uid)
         if not u:
-            raise HTTPException(404, "Пользователь не найден")
+            raise HTTPException(404, "User not found")
         if body.role:
             if body.role not in ("admin", "viewer"):
-                raise HTTPException(400, "Роль: admin или viewer")
+                raise HTTPException(400, "Role must be admin or viewer")
             if u.id == user.id and body.role != "admin":
-                raise HTTPException(400, "Нельзя снять админа с самого себя")
+                raise HTTPException(400, "You can't remove admin rights from yourself")
             u.role = body.role
         if body.password:
             u.password_hash = auth.hash_password(body.password)
@@ -591,7 +591,7 @@ def patch_user(uid: int, body: UserPatch, user: User = Depends(auth.admin_user))
 @app.delete("/api/users/{uid}")
 def delete_user(uid: int, user: User = Depends(auth.admin_user)):
     if uid == user.id:
-        raise HTTPException(400, "Нельзя удалить самого себя")
+        raise HTTPException(400, "You can't delete yourself")
     with Session() as s:
         u = s.get(User, uid)
         if u:
@@ -620,7 +620,7 @@ def _health_allowed(request: Request) -> bool:
 def health_report(request: Request, format: str = "json"):
     """Full health report. 200 when ok/warn, 503 when something is broken — so uptime monitors can alert on it."""
     if not _health_allowed(request):
-        raise HTTPException(401, "Нужен админ или заголовок X-Health-Token")
+        raise HTTPException(401, "Admin session or X-Health-Token header required")
     r = health.report(scheduler_running=scheduler.running if config.SCHEDULER_ENABLED else None)
     code = 503 if r["status"] == "fail" else 200
     if format == "text":
@@ -644,4 +644,4 @@ def spa(path: str):
     index = os.path.join(_static, "index.html")
     if os.path.isfile(index):
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
-    return JSONResponse({"detail": "Фронтенд не собран (frontend → npm run build)"}, status_code=404)
+    return JSONResponse({"detail": "Frontend is not built (run npm run build in frontend/)"}, status_code=404)

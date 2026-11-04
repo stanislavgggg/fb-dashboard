@@ -12,7 +12,7 @@ function detailText(detail: unknown): string {
     // FastAPI validation errors
     return detail.map((d) => (d && typeof d === 'object' && 'msg' in d ? String(d.msg) : String(d))).join('; ')
   }
-  return 'Ошибка запроса'
+  return 'Request failed'
 }
 
 export async function api<T = unknown>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -25,7 +25,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     })
   } catch {
-    throw new ApiError(0, 'Сервер недоступен. Проверь соединение.')
+    throw new ApiError(0, 'Server unreachable. Check your connection.')
   }
   if (res.status === 401 && path !== '/api/auth/login') {
     window.dispatchEvent(new Event('auth:logout'))
@@ -39,7 +39,7 @@ export async function api<T = unknown>(path: string, opts: { method?: string; bo
   }
   if (!res.ok && !(res.status === 503 && path.startsWith('/api/health'))) {
     const detail = data && typeof data === 'object' && 'detail' in data ? (data as { detail: unknown }).detail : null
-    throw new ApiError(res.status, detail ? detailText(detail) : `Ошибка ${res.status}`)
+    throw new ApiError(res.status, detail ? detailText(detail) : `Error ${res.status}`)
   }
   return data as T
 }

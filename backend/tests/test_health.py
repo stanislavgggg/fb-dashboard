@@ -21,7 +21,7 @@ def _healthy_setup():
         s.flush()
         s.add(AdAccount(id="act_1", profile_id=p.id, name="A", status=1, currency="EUR"))
         s.add(SyncRun(trigger="schedule", started_at=utcnow() - timedelta(minutes=5),
-                      finished_at=utcnow() - timedelta(minutes=4), ok=True, message="P: 1 каб. | Keitaro: 3 строк"))
+                      finished_at=utcnow() - timedelta(minutes=4), ok=True, message="P: 1 accounts | Keitaro: 3 rows"))
         s.add(KeitaroDay(day=TODAY, sub_value="c1", regs=1, updated_at=utcnow()))
         set_settings(s, {"fx_to_usd": {"USD": 1.0, "EUR": 1.1}, "fx_updated_at": TODAY.isoformat(),
                          "tg_chat_id": "-100"})
@@ -34,7 +34,7 @@ def test_healthy(monkeypatch):
     _healthy_setup()
     r = health.report(scheduler_running=True)
     assert r["status"] == "ok", health.as_text(r)
-    assert "без ошибок" in by_name(r)["Синхронизация"]["text"]
+    assert "no errors" in by_name(r)["Sync"]["text"]
 
 
 def test_problems_are_detected(monkeypatch):
@@ -47,19 +47,19 @@ def test_problems_are_detected(monkeypatch):
         s.add(Profile(name="Rotated", token_enc=foreign))
         s.add(SyncRun(trigger="schedule", started_at=utcnow() - timedelta(hours=2)))  # stuck
         s.add(SyncRun(trigger="schedule", started_at=utcnow() - timedelta(hours=5),
-                      finished_at=utcnow() - timedelta(hours=5), ok=False, message="Keitaro: ошибка — 502"))
+                      finished_at=utcnow() - timedelta(hours=5), ok=False, message="Keitaro: error — 502"))
         s.add(AlertLog(key="old", text="x", sent=False, created_at=utcnow() - timedelta(hours=3)))
         set_settings(s, {"tg_chat_id": "-100"})
         s.commit()
     r = health.report(scheduler_running=False)
     c = by_name(r)
     assert r["status"] == "fail"
-    assert c["Планировщик"]["level"] == "fail"
-    assert c["Синхронизация"]["level"] == "fail" and "висит" in c["Синхронизация"]["text"]
-    assert c["Ключ шифрования"]["level"] == "fail"
-    assert c["Профили"]["level"] == "fail"  # every active profile is broken
+    assert c["Scheduler"]["level"] == "fail"
+    assert c["Sync"]["level"] == "fail" and "stuck" in c["Sync"]["text"]
+    assert c["Encryption key"]["level"] == "fail"
+    assert c["Profiles"]["level"] == "fail"  # every active profile is broken
     assert c["Keitaro"]["level"] == "fail"
-    assert c["Алерты"]["level"] == "fail"
+    assert c["Alerts"]["level"] == "fail"
     text = health.as_text(r)
     assert "[FAIL]" in text and "Rotated" in text
 
@@ -75,8 +75,8 @@ def test_missing_fx_and_stale_sync(monkeypatch):
                       finished_at=utcnow() - timedelta(minutes=89), ok=True, message=""))
         s.commit()
     c = by_name(health.report(scheduler_running=True))
-    assert c["Курсы валют"]["level"] == "warn" and "PLN" in c["Курсы валют"]["text"]
-    assert c["Синхронизация"]["level"] == "warn"
+    assert c["Currency rates"]["level"] == "warn" and "PLN" in c["Currency rates"]["text"]
+    assert c["Sync"]["level"] == "warn"
 
 
 def test_cli_exit_code(monkeypatch, capsys):
@@ -86,7 +86,7 @@ def test_cli_exit_code(monkeypatch, capsys):
     with pytest.raises(SystemExit) as e:
         runpy.run_module("app.health", run_name="__main__")
     out = capsys.readouterr().out
-    assert "FB-дашборд:" in out and e.value.code in (0, 1)
+    assert "FB dashboard:" in out and e.value.code in (0, 1)
 
 
 def test_endpoint_auth_and_formats(monkeypatch):
@@ -97,7 +97,7 @@ def test_endpoint_auth_and_formats(monkeypatch):
         r = c.get("/api/health", headers={"X-Health-Token": "secret-health"})
         assert r.status_code in (200, 503) and "checks" in r.json()
         t = c.get("/api/health", params={"format": "text", "token": "secret-health"})
-        assert t.text.startswith("FB-дашборд:")
+        assert t.text.startswith("FB dashboard:")
         # admin session works without a token
         c.post("/api/auth/login", json={"login": "admin", "password": "adminpass123"})
         assert c.get("/api/health").status_code in (200, 503)

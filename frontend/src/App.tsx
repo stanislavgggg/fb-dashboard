@@ -46,17 +46,17 @@ export default function App() {
   return (
     <MeCtx.Provider value={me}>
       <header className="topbar">
-        <div className="brand"><Logo /><span>Кабинеты FB</span></div>
-        <nav className="nav" aria-label="Разделы">
-          <NavLink to="/" end>Сводка</NavLink>
-          <NavLink to="/accounts">Кабинеты</NavLink>
-          <NavLink to="/profiles">Профили</NavLink>
-          <NavLink to="/sync">Синхронизация</NavLink>
-          {me.role === 'admin' && <NavLink to="/settings">Настройки</NavLink>}
+        <div className="brand"><Logo /><span>FB Accounts</span></div>
+        <nav className="nav" aria-label="Sections">
+          <NavLink to="/" end>Overview</NavLink>
+          <NavLink to="/accounts">Ad accounts</NavLink>
+          <NavLink to="/profiles">Profiles</NavLink>
+          <NavLink to="/sync">Sync</NavLink>
+          {me.role === 'admin' && <NavLink to="/settings">Settings</NavLink>}
         </nav>
         <div className="who">
           <span className="login-name">{me.login}</span>
-          <button className="btn small" onClick={logout}>Выйти</button>
+          <button className="btn small" onClick={logout}>Log out</button>
         </div>
       </header>
       <main className="page">

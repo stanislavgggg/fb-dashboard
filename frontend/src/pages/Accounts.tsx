@@ -37,25 +37,25 @@ export default function AccountsPage() {
   return (
     <div className="stack">
       <div className="page-head">
-        <h1>Кабинеты</h1>
-        <span className="sub">{counts.active} активных из {counts.all}</span>
+        <h1>Ad accounts</h1>
+        <span className="sub">{counts.active} of {counts.all} active</span>
       </div>
       <div className="filters">
-        <div className="seg" role="group" aria-label="Статус">
-          <button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>Все {counts.all}</button>
-          <button aria-pressed={filter === 'active'} onClick={() => setFilter('active')}>Активные {counts.active}</button>
-          <button aria-pressed={filter === 'problem'} onClick={() => setFilter('problem')}>Проблемные {counts.problem}</button>
+        <div className="seg" role="group" aria-label="Status">
+          <button aria-pressed={filter === 'all'} onClick={() => setFilter('all')}>All {counts.all}</button>
+          <button aria-pressed={filter === 'active'} onClick={() => setFilter('active')}>Active {counts.active}</button>
+          <button aria-pressed={filter === 'problem'} onClick={() => setFilter('problem')}>Problems {counts.problem}</button>
         </div>
-        <input className="input" placeholder="Поиск: название, ID, гео, поставщик" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 320 }} />
+        <input className="input" placeholder="Search: name, ID, geo, supplier" value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 320 }} />
       </div>
       {error && <ErrorBox text={error} onRetry={reload} />}
       <section className="panel table-scroll">
         <table className="t">
           <thead>
             <tr>
-              <th>Кабинет</th><th>Статус</th><th>Гео</th><th>Профиль</th>
-              <th className="n">Расход сегодня</th><th className="n">Всего потрачено</th>
-              <th className="n">Лимит</th><th className="n">Баланс</th><th>Обновлён</th>
+              <th>Ad account</th><th>Status</th><th>Geo</th><th>Profile</th>
+              <th className="n">Spend today</th><th className="n">Lifetime spend</th>
+              <th className="n">Spend cap</th><th className="n">Balance</th><th>Updated</th>
               {me.role === 'admin' && <th />}
             </tr>
           </thead>
@@ -63,8 +63,8 @@ export default function AccountsPage() {
             {loading && !data && <tr><td colSpan={10}><div className="empty"><Spinner /></div></td></tr>}
             {data && rows.length === 0 && (
               <tr><td colSpan={10}><div className="empty">
-                <strong>{data.length ? 'Ничего не нашлось' : 'Кабинетов пока нет'}</strong>
-                {data.length ? 'Измени поиск или фильтр.' : 'Они появятся после первой синхронизации профиля.'}
+                <strong>{data.length ? 'Nothing found' : 'No ad accounts yet'}</strong>
+                {data.length ? 'Change the search or filter.' : 'They appear after the first profile sync.'}
               </div></td></tr>
             )}
             {rows.map((a) => (
@@ -76,8 +76,8 @@ export default function AccountsPage() {
                 </td>
                 <td><StatusBadge active={a.active} missing={a.missing} text={a.status_text} /></td>
                 <td>{a.geo || <span className="sub">—</span>}</td>
-                <td className="name">{a.profile}<small>{a.supplier || 'без поставщика'}{a.buyer ? ` · ${a.buyer}` : ''}</small></td>
-                <td className="n" title={a.timezone ? `Сегодня по кабинету (${a.timezone}): ${a.today}` : undefined}>
+                <td className="name">{a.profile}<small>{a.supplier || 'no supplier'}{a.buyer ? ` · ${a.buyer}` : ''}</small></td>
+                <td className="n" title={a.timezone ? `Today in the account time zone (${a.timezone}): ${a.today}` : undefined}>
                   {money(a.spend_today_usd)}
                   {a.timezone && !a.timezone.startsWith('Europe/') && <small className="sub" style={{ display: 'block' }}>{a.timezone.split('/').pop()}</small>}
                 </td>
@@ -85,20 +85,20 @@ export default function AccountsPage() {
                 <td className="n">
                   {a.spend_cap ? (
                     <span className={a.cap_used !== null && a.cap_used >= 90 ? 'flag' : ''}>
-                      {a.cap_used}% из {native(a.spend_cap, a.currency)}
+                      {a.cap_used}% of {native(a.spend_cap, a.currency)}
                     </span>
-                  ) : <span className="sub">нет</span>}
+                  ) : <span className="sub">none</span>}
                 </td>
                 <td className="n">{a.balance ? native(a.balance, a.currency) : '—'}</td>
                 <td className="sub">{ago(a.updated_at)}</td>
-                {me.role === 'admin' && <td><button className="btn small" onClick={() => setEdit(a)}>Изменить</button></td>}
+                {me.role === 'admin' && <td><button className="btn small" onClick={() => setEdit(a)}>Edit</button></td>}
               </tr>
             ))}
           </tbody>
         </table>
       </section>
       {edit && (
-        <EditAccount account={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); toast('Кабинет сохранён') }} />
+        <EditAccount account={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); reload(); toast('Ad account saved') }} />
       )}
     </div>
   )
@@ -122,15 +122,15 @@ function EditAccount({ account, onClose, onSaved }: { account: Account; onClose:
   }
   return (
     <Modal title={account.name} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Отмена</button><button className="btn primary" onClick={save} disabled={busy}>Сохранить</button></>}>
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" onClick={save} disabled={busy}>Save</button></>}>
       <div className="field">
-        <label htmlFor="geo">Гео</label>
+        <label htmlFor="geo">Geo</label>
         <input id="geo" className="input" value={geo} onChange={(e) => setGeo(e.target.value)} placeholder="LT" maxLength={40} />
       </div>
       <div className="field">
-        <label htmlFor="lbl">Заметка</label>
-        <input id="lbl" className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Например: казино, связка №3" maxLength={200} />
-        <span className="hint">Видна только здесь, в Facebook ничего не меняется.</span>
+        <label htmlFor="lbl">Note</label>
+        <input id="lbl" className="input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. casino, funnel #3" maxLength={200} />
+        <span className="hint">Only visible here, nothing changes in Facebook.</span>
       </div>
     </Modal>
   )

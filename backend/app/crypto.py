@@ -13,7 +13,7 @@ try:
 except (ValueError, TypeError) as e:
     raise RuntimeError("SECRET_KEY has a wrong format: it must be a Fernet key (44 base64 characters)") from e
 
-KEY_CHANGED = "ключ шифрования изменён — введи заново"
+KEY_CHANGED = "encryption key changed — enter it again"
 
 
 class KeyChanged(Exception):

@@ -25,19 +25,19 @@ export default function LoginPage({ onLogin }: { onLogin: (m: Me) => void }) {
     <div className="login">
       <form className="panel" onSubmit={submit}>
         <div>
-          <h1>Кабинеты FB</h1>
-          <div className="sub">Сводка по всем агентским кабинетам</div>
+          <h1>FB Accounts</h1>
+          <div className="sub">One view of all agency ad accounts</div>
         </div>
         <div className="field">
-          <label htmlFor="l">Логин</label>
+          <label htmlFor="l">Login</label>
           <input id="l" className="input" autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} required autoFocus />
         </div>
         <div className="field">
-          <label htmlFor="p">Пароль</label>
+          <label htmlFor="p">Password</label>
           <input id="p" className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
         {error && <div className="notice bad">{error}</div>}
-        <button className="btn primary" disabled={busy}>{busy ? 'Вхожу…' : 'Войти'}</button>
+        <button className="btn primary" disabled={busy}>{busy ? 'Logging in…' : 'Log in'}</button>
       </form>
     </div>
   )

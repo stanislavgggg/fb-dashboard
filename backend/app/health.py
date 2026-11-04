@@ -22,15 +22,15 @@ LEVELS = {"ok": 0, "warn": 1, "fail": 2}
 
 def _ago(dt: datetime | None) -> str:
     if dt is None:
-        return "никогда"
+        return "never"
     m = int((utcnow() - dt).total_seconds() // 60)
     if m < 1:
-        return "только что"
+        return "just now"
     if m < 60:
-        return f"{m} мин назад"
+        return f"{m} min ago"
     if m < 48 * 60:
-        return f"{m // 60} ч {m % 60} мин назад"
-    return f"{m // 1440} дн назад"
+        return f"{m // 60} h {m % 60} min ago"
+    return f"{m // 1440} days ago"
 
 
 def _check(name: str, level: str, text_: str, **details) -> dict:
@@ -41,17 +41,17 @@ def _db(s) -> dict:
     t = time.perf_counter()
     s.execute(text("SELECT 1"))
     ms = (time.perf_counter() - t) * 1000
-    return _check("База", "ok" if ms < 500 else "warn", f"отвечает, {ms:.0f} мс")
+    return _check("Database", "ok" if ms < 500 else "warn", f"responding, {ms:.0f} ms")
 
 
 def _scheduler(running: bool | None) -> dict:
     if not config.SCHEDULER_ENABLED:
-        return _check("Планировщик", "warn", "выключен (SCHEDULER_ENABLED=0) — синхронизация только вручную")
+        return _check("Scheduler", "warn", "disabled (SCHEDULER_ENABLED=0) — manual syncs only")
     if running is None:
-        return _check("Планировщик", "ok", "проверяется только в работающем сервисе (по журналу запусков ниже)")
+        return _check("Scheduler", "ok", "can only be checked in the running service (see the sync log below)")
     if not running:
-        return _check("Планировщик", "fail", "не работает — плановых синхронизаций не будет, перезапусти сервис")
-    return _check("Планировщик", "ok", f"работает, каждые {config.SYNC_MINUTES} мин")
+        return _check("Scheduler", "fail", "not running — no scheduled syncs will happen, restart the service")
+    return _check("Scheduler", "ok", f"running, every {config.SYNC_MINUTES} min")
 
 
 def _sync(s) -> dict:
@@ -65,31 +65,31 @@ def _sync(s) -> dict:
     stats = {"runs_24h": total, "failed_24h": failed}
 
     if running and utcnow() - running.started_at > timedelta(minutes=45):
-        return _check("Синхронизация", "fail", f"запуск висит с {_ago(running.started_at)} — перезапусти сервис", **stats)
+        return _check("Sync", "fail", f"a run has been stuck since {_ago(running.started_at)} — restart the service", **stats)
     if last is None:
         if running:
-            return _check("Синхронизация", "ok", "первый запуск идёт", **stats)
-        return _check("Синхронизация", "warn", "ещё ни одного завершённого запуска", **stats)
+            return _check("Sync", "ok", "first run in progress", **stats)
+        return _check("Sync", "warn", "no completed runs yet", **stats)
 
     age = utcnow() - last.finished_at
-    tail = f"; за сутки {total} запусков, с ошибками {failed}"
+    tail = f"; last 24h: {total} runs, {failed} with errors"
     if age > period * 6 and config.SCHEDULER_ENABLED:
-        return _check("Синхронизация", "fail", f"последняя закончилась {_ago(last.finished_at)} — данные не обновляются{tail}", **stats)
+        return _check("Sync", "fail", f"last one finished {_ago(last.finished_at)} — data is not updating{tail}", **stats)
     if age > period * 2 + timedelta(minutes=10) and config.SCHEDULER_ENABLED:
-        return _check("Синхронизация", "warn", f"последняя закончилась {_ago(last.finished_at)}, ожидалась раньше{tail}", **stats)
+        return _check("Sync", "warn", f"last one finished {_ago(last.finished_at)}, expected sooner{tail}", **stats)
     if last.ok is False:
-        errs = [m for m in (last.message or "").split(" | ") if any(w in m.lower() for w in ("ошибк", "error", "не работает", "0 кабинетов", "не обновились", "ключ"))]
-        return _check("Синхронизация", "warn", f"последняя {_ago(last.finished_at)}, с ошибками{tail}",
+        errs = [m for m in (last.message or "").split(" | ") if any(w in m.lower() for w in ("error", "stopped working", "0 ad accounts", "not updated", "key changed", "proxy", "network"))]
+        return _check("Sync", "warn", f"last one {_ago(last.finished_at)}, with errors{tail}",
                       errors=errs[:10], **stats)
-    now = " (сейчас идёт следующая)" if running else ""
-    return _check("Синхронизация", "ok", f"последняя {_ago(last.finished_at)}, без ошибок{now}{tail}", **stats)
+    now = " (the next one is running now)" if running else ""
+    return _check("Sync", "ok", f"last one {_ago(last.finished_at)}, no errors{now}{tail}", **stats)
 
 
 def _profiles(s) -> list[dict]:
     out = []
     profiles = s.scalars(select(Profile).where(Profile.active.is_(True))).all()
     if not profiles:
-        return [_check("Профили", "warn", "нет ни одного активного профиля")]
+        return [_check("Profiles", "warn", "no active profiles")]
     key_broken, dead, proxy, stale = [], [], [], []
     stale_after = timedelta(minutes=config.SYNC_MINUTES * 3 + 10)
     for p in profiles:
@@ -106,19 +106,19 @@ def _profiles(s) -> list[dict]:
         elif p.last_sync_at is None or utcnow() - p.last_sync_at > stale_after:
             stale.append(p.name)
     if key_broken:
-        out.append(_check("Ключ шифрования", "fail",
-                          f"токены {len(key_broken)} профилей зашифрованы другим SECRET_KEY — введи их заново",
+        out.append(_check("Encryption key", "fail",
+                          f"tokens of {len(key_broken)} profiles were encrypted with a different SECRET_KEY — enter them again",
                           profiles=key_broken))
     bad = len(key_broken) + len(dead) + len(proxy)
     level = "ok" if not (dead or proxy or stale) else ("fail" if bad == len(profiles) else "warn")
-    parts = [f"активных {len(profiles)}"]
+    parts = [f"{len(profiles)} active"]
     if dead:
-        parts.append(f"токен умер: {len(dead)}")
+        parts.append(f"dead token: {len(dead)}")
     if proxy:
-        parts.append(f"прокси не отвечает: {len(proxy)}")
+        parts.append(f"proxy not responding: {len(proxy)}")
     if stale:
-        parts.append(f"давно не обновлялись: {len(stale)}")
-    out.append(_check("Профили", level, ", ".join(parts),
+        parts.append(f"not updated for a while: {len(stale)}")
+    out.append(_check("Profiles", level, ", ".join(parts),
                       **{k: v for k, v in (("dead_token", dead), ("proxy_down", proxy), ("stale", stale)) if v}))
     return out
 
@@ -126,35 +126,35 @@ def _profiles(s) -> list[dict]:
 def _accounts(s) -> dict:
     accs = s.scalars(select(AdAccount)).all()
     if not accs:
-        return _check("Кабинеты", "warn", "ни одного кабинета — появятся после первой синхронизации профиля")
+        return _check("Ad accounts", "warn", "none yet — they appear after the first profile sync")
     active = [a for a in accs if a.status in ACTIVE_STATUSES and not a.missing]
     missing = [a for a in accs if a.missing]
     errors = [a for a in accs if a.last_error and not a.missing]
     fresh = s.scalar(select(func.max(CampaignDay.updated_at)))
-    text_ = f"активных {len(active)} из {len(accs)}"
+    text_ = f"{len(active)} of {len(accs)} active"
     if missing:
-        text_ += f", нет доступа {len(missing)}"
+        text_ += f", no access: {len(missing)}"
     if errors:
-        text_ += f", с ошибкой {len(errors)}"
-    text_ += f"; статистика FB обновлена {_ago(fresh)}"
+        text_ += f", with errors: {len(errors)}"
+    text_ += f"; FB stats updated {_ago(fresh)}"
     level = "warn" if errors or not active else "ok"
-    return _check("Кабинеты", level, text_,
+    return _check("Ad accounts", level, text_,
                   **({"errors": [f"{a.name} ({a.id}): {a.last_error[:150]}" for a in errors[:10]]} if errors else {}))
 
 
 def _keitaro(s, last_msg: str) -> dict:
     if not keitaro.enabled():
-        return _check("Keitaro", "warn", "не подключён — регистрации, депозиты и профит пустые")
+        return _check("Keitaro", "warn", "not connected — registrations, deposits and profit are empty")
     fresh = s.scalar(select(func.max(KeitaroDay.updated_at)))
-    if "Keitaro: ошибка" in last_msg:
+    if "Keitaro: error" in last_msg:
         err = next((m for m in last_msg.split(" | ") if m.startswith("Keitaro")), "")
         return _check("Keitaro", "fail" if fresh is None else "warn",
-                      f"последний запрос с ошибкой, данные от {_ago(fresh)}", error=err[:300])
+                      f"last request failed, data from {_ago(fresh)}", error=err[:300])
     if fresh is None:
-        return _check("Keitaro", "warn", "данных пока нет")
+        return _check("Keitaro", "warn", "no data yet")
     if utcnow() - fresh > timedelta(minutes=config.SYNC_MINUTES * 3 + 10):
-        return _check("Keitaro", "warn", f"данные устарели: обновлены {_ago(fresh)}")
-    return _check("Keitaro", "ok", f"обновлён {_ago(fresh)}, окно {config.KEITARO_DAYS_BACK} дн")
+        return _check("Keitaro", "warn", f"data is stale: updated {_ago(fresh)}")
+    return _check("Keitaro", "ok", f"updated {_ago(fresh)}, {config.KEITARO_DAYS_BACK}-day window")
 
 
 def _fx(s, st: dict) -> dict:
@@ -164,31 +164,31 @@ def _fx(s, st: dict) -> dict:
     upd = st.get("fx_updated_at")
     age = (date.today() - date.fromisoformat(upd)).days if upd else None
     if missing:
-        return _check("Курсы валют", "warn", f"нет курса для {', '.join(missing)} — расход считается как в долларах")
+        return _check("Currency rates", "warn", f"no rate for {', '.join(missing)} — that spend is counted as USD")
     if used <= {"USD"}:
-        return _check("Курсы валют", "ok", "все кабинеты в USD")
+        return _check("Currency rates", "ok", "all ad accounts are in USD")
     if age is None:
-        return _check("Курсы валют", "warn", "курсы ни разу не обновлялись")
+        return _check("Currency rates", "warn", "rates have never been updated")
     limit = 2 if st.get("fx_auto") else 45
-    mode = "авто" if st.get("fx_auto") else "вручную"
+    mode = "auto" if st.get("fx_auto") else "manual"
     if age > limit:
-        return _check("Курсы валют", "warn", f"обновлены {age} дн назад ({mode})")
-    return _check("Курсы валют", "ok", f"обновлены {'сегодня' if age == 0 else f'{age} дн назад'} ({mode})")
+        return _check("Currency rates", "warn", f"updated {age} days ago ({mode})")
+    return _check("Currency rates", "ok", f"updated {'today' if age == 0 else f'{age} days ago'} ({mode})")
 
 
 def _alerts(s, st: dict) -> dict:
     if not st.get("alerts_enabled"):
-        return _check("Алерты", "warn", "выключены в настройках")
+        return _check("Alerts", "warn", "turned off in settings")
     if not config.TG_BOT_TOKEN:
-        return _check("Алерты", "warn", "TG_BOT_TOKEN не задан — алерты видны только в интерфейсе")
+        return _check("Alerts", "warn", "TG_BOT_TOKEN is not set — alerts are only visible in the dashboard")
     if not st.get("tg_chat_id"):
-        return _check("Алерты", "warn", "не указан ID чата в настройках")
+        return _check("Alerts", "warn", "no chat ID in settings")
     stuck = s.scalar(select(func.count()).select_from(AlertLog)
                      .where(AlertLog.sent.is_(False), AlertLog.created_at < utcnow() - timedelta(hours=1))) or 0
     if stuck:
-        return _check("Алерты", "fail", f"{stuck} алертов не доходят до Telegram больше часа — проверь бота и chat_id (кнопка «Отправить тест»)")
+        return _check("Alerts", "fail", f"{stuck} alerts haven't reached Telegram for over an hour — check the bot and chat ID (Send test button)")
     day = s.scalar(select(func.count()).select_from(AlertLog).where(AlertLog.created_at >= utcnow() - timedelta(days=1))) or 0
-    return _check("Алерты", "ok", f"доставляются, за сутки {day}")
+    return _check("Alerts", "ok", f"delivered, {day} in the last 24h")
 
 
 def report(scheduler_running: bool | None = None) -> dict:
@@ -206,15 +206,15 @@ def report(scheduler_running: bool | None = None) -> dict:
             checks.append(_fx(s, st))
             checks.append(_alerts(s, st))
     except Exception as e:  # the report itself must never crash
-        checks.append(_check("База", "fail", f"ошибка: {e}"))
+        checks.append(_check("Database", "fail", f"error: {e}"))
     status = max((c["level"] for c in checks), key=LEVELS.__getitem__, default="ok")
     return {"status": status, "checked_at": utcnow().isoformat() + "Z", "checks": checks}
 
 
 def as_text(r: dict) -> str:
     mark = {"ok": "[ok]  ", "warn": "[warn]", "fail": "[FAIL]"}
-    head = {"ok": "всё в порядке", "warn": "есть предупреждения", "fail": "есть проблемы"}[r["status"]]
-    lines = [f"FB-дашборд: {r['status'].upper()} — {head}  ({r['checked_at'][:16].replace('T', ' ')} UTC)", ""]
+    head = {"ok": "all good", "warn": "warnings", "fail": "problems found"}[r["status"]]
+    lines = [f"FB dashboard: {r['status'].upper()} — {head}  ({r['checked_at'][:16].replace('T', ' ')} UTC)", ""]
     for c in r["checks"]:
         lines.append(f"{mark[c['level']]} {c['name']}: {c['text']}")
         for k, v in (c.get("details") or {}).items():
@@ -228,8 +228,8 @@ def as_text(r: dict) -> str:
 
 if __name__ == "__main__":
     from .db import init_db
-    ap = argparse.ArgumentParser(description="Проверка здоровья FB-дашборда")
-    ap.add_argument("--json", action="store_true", help="вывести JSON вместо текста")
+    ap = argparse.ArgumentParser(description="FB dashboard health check")
+    ap.add_argument("--json", action="store_true", help="print JSON instead of text")
     args = ap.parse_args()
     init_db()
     r = report()

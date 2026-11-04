@@ -30,22 +30,22 @@ def refresh(force: bool = False) -> tuple[bool, str]:
     with Session() as s:
         st = get_settings(s)
         if not st.get("fx_auto") and not force:
-            return True, "авто-курсы выключены"
+            return True, "automatic rates are off"
         if not force and st.get("fx_updated_at") == date.today().isoformat() and st.get("fx_source") == "auto":
-            return True, "курсы уже обновлены сегодня"
+            return True, "rates already updated today"
         seen = set(s.scalars(select(AdAccount.currency).distinct()).all())
         seen |= set((st.get("fx_to_usd") or {}).keys())
         try:
             auto = fetch(seen)
         except Exception as e:
             log.warning("fx fetch failed: %s", e)
-            return False, f"курсы не обновились: {e}"
+            return False, f"rates not updated: {e}"
         manual = {k.upper(): float(v) for k, v in (st.get("fx_manual") or {}).items()}
         fx = {**(st.get("fx_to_usd") or {}), **auto, **manual, "USD": 1.0}
         missing = sorted(c for c in seen if c not in fx)
         set_settings(s, {"fx_to_usd": fx, "fx_updated_at": date.today().isoformat(), "fx_source": "auto"})
         s.commit()
-    msg = f"курсы обновлены: {', '.join(sorted(auto))}" if auto else "курсы: нечего обновлять"
+    msg = f"rates updated: {', '.join(sorted(auto))}" if auto else "rates: nothing to update"
     if missing:
-        msg += f"; нет в источнике: {', '.join(missing)} — задай вручную"
+        msg += f"; not in the source: {', '.join(missing)} — set them manually"
     return True, msg

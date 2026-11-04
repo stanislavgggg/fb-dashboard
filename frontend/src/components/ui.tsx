@@ -43,7 +43,7 @@ export function Modal({ title, onClose, children, footer }: {
       <div className="modal" role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="btn ghost small" onClick={onClose} aria-label="Закрыть">✕</button>
+          <button className="btn ghost small" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div className="modal-body">{children}</div>
         {footer && <div className="modal-foot">{footer}</div>}
@@ -73,20 +73,20 @@ export function useLoad<T>(fn: () => Promise<T>, deps: unknown[]) {
 
 // ---------------------------------------------------------------- misc
 export function Spinner() {
-  return <span className="spin" aria-label="Загрузка" />
+  return <span className="spin" aria-label="Loading" />
 }
 
 export function ProfitBar({ profit, scale }: { profit: number; scale: number }) {
   const w = scale > 0 ? Math.min(50, (Math.abs(profit) / scale) * 50) : 0
   return (
-    <span className="pbar" title={profit >= 0 ? 'В плюсе' : 'В минусе'}>
+    <span className="pbar" title={profit >= 0 ? 'In profit' : 'In loss'}>
       {profit !== 0 && <span className={profit > 0 ? 'g' : 'l'} style={{ width: `${w}%` }} />}
     </span>
   )
 }
 
 export function StatusBadge({ active, missing, text }: { active: boolean; missing?: boolean; text: string }) {
-  if (missing) return <span className="badge warn">Нет доступа</span>
+  if (missing) return <span className="badge warn">No access</span>
   return <span className={`badge ${active ? 'ok' : 'bad'}`}>{text}</span>
 }
 
@@ -94,7 +94,7 @@ export function ErrorBox({ text, onRetry }: { text: string; onRetry?: () => void
   return (
     <div className="notice bad row" style={{ justifyContent: 'space-between' }}>
       <span>{text}</span>
-      {onRetry && <button className="btn small" onClick={onRetry}>Повторить</button>}
+      {onRetry && <button className="btn small" onClick={onRetry}>Retry</button>}
     </div>
   )
 }

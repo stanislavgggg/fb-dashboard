@@ -39,7 +39,7 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
     with Session() as s:
         p = s.get(Profile, profile_id)
         if p is None:
-            return False, f"профиль {profile_id} не найден"
+            return False, f"profile {profile_id} not found"
         try:
             client = FBClient(dec(p.token_enc), dec(p.proxy_enc))
         except KeyChanged as e:
@@ -47,7 +47,7 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
             s.commit()
             return False, f"{p.name}: {e}"
         except Exception as e:
-            p.last_error, p.last_sync_at = f"прокси/токен: {e}", utcnow()
+            p.last_error, p.last_sync_at = f"proxy/token: {e}", utcnow()
             s.commit()
             return False, f"{p.name}: {e}"
         try:
@@ -70,9 +70,9 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
                                                                 AdAccount.missing.is_(False))).all()
             if not accounts and known_before:
                 # a transient empty answer must not flip every account to "no access"
-                p.last_error, p.last_sync_at = "Facebook вернул 0 кабинетов (раньше было %d) — пропускаю" % len(known_before), utcnow()
+                p.last_error, p.last_sync_at = "Facebook returned 0 ad accounts (had %d before) — skipped" % len(known_before), utcnow()
                 s.commit()
-                return False, f"{p.name}: 0 кабинетов от FB, оставил как было"
+                return False, f"{p.name}: 0 ad accounts from FB, kept as is"
 
             seen, errors, rows, skipped = set(), [], 0, 0
             for a in accounts:
@@ -129,7 +129,7 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
                 except Exception as e:  # unexpected payload etc. — one account must not kill the profile
                     # (parsing happens before the delete, so nothing destructive is pending here)
                     log.exception("account %s", acc.id)
-                    acc.last_error = f"ошибка обработки: {e}"
+                    acc.last_error = f"processing error: {e}"
                     errors.append(f"{acc.name}: {e}")
                 s.commit()
                 _pause(0.3)  # be gentle with the API
@@ -145,17 +145,17 @@ def sync_profile(profile_id: int, since: date, until: date) -> tuple[bool, str]:
             p.last_error = "; ".join(errors)[:2000]
             p.last_sync_at = utcnow()
             s.commit()
-            msg = f"{p.name}: {len(accounts) - skipped} каб., {rows} строк"
+            msg = f"{p.name}: {len(accounts) - skipped} accounts, {rows} rows"
             if skipped:
-                msg += f", {skipped} общих с другим профилем"
-            return not errors, msg + (f", ошибок {len(errors)}" if errors else "")
+                msg += f", {skipped} shared with another profile"
+            return not errors, msg + (f", errors: {len(errors)}" if errors else "")
         finally:
             client.close()
 
 
 def sync_keitaro(since: date, until: date) -> tuple[bool, str]:
     if not keitaro.enabled():
-        return True, "Keitaro не настроен"
+        return True, "Keitaro not configured"
     rows = keitaro.report(since, until)
     merged = defaultdict(lambda: {"clicks": 0, "regs": 0, "deps": 0, "revenue": 0.0})
     for r in rows:
@@ -168,7 +168,7 @@ def sync_keitaro(since: date, until: date) -> tuple[bool, str]:
         for (day, sub), v in merged.items():
             s.add(KeitaroDay(day=day, sub_value=sub, updated_at=utcnow(), **v))
         s.commit()
-    return True, f"Keitaro: {len(merged)} строк за {(until - since).days + 1} дн."
+    return True, f"Keitaro: {len(merged)} rows over {(until - since).days + 1} days"
 
 
 def close_unfinished_runs(s, only_stale: bool = True) -> bool:
@@ -177,7 +177,7 @@ def close_unfinished_runs(s, only_stale: bool = True) -> bool:
     fresh = False
     for r in s.scalars(select(SyncRun).where(SyncRun.finished_at.is_(None))).all():
         if not only_stale or utcnow() - r.started_at > STALE_RUN:
-            r.finished_at, r.ok, r.message = utcnow(), False, (r.message + " | " if r.message else "") + "прервано (рестарт сервиса)"
+            r.finished_at, r.ok, r.message = utcnow(), False, (r.message + " | " if r.message else "") + "interrupted (service restart)"
         else:
             fresh = True
     s.commit()
@@ -199,11 +199,11 @@ def _set_progress(run_id: int, text: str):
 
 def sync_all(days: int, trigger: str = "schedule", profile_ids: list[int] | None = None) -> str:
     if not _lock.acquire(blocking=False):
-        return "Синхронизация уже идёт"
+        return "Sync is already running"
     try:
         with Session() as s:
             if close_unfinished_runs(s, only_stale=True):
-                return "Синхронизация уже идёт"
+                return "Sync is already running"
             run = SyncRun(trigger=trigger, days=days, started_at=utcnow())
             s.add(run)
             s.commit()
@@ -216,12 +216,12 @@ def sync_all(days: int, trigger: str = "schedule", profile_ids: list[int] | None
         since, until = _date_range(days)
         msgs, all_ok = [], True
         for i, pid in enumerate(ids, 1):
-            _set_progress(run_id, f"профиль {i} из {len(ids)}… | " + " | ".join(msgs))
+            _set_progress(run_id, f"profile {i} of {len(ids)}… | " + " | ".join(msgs))
             try:
                 ok, m = sync_profile(pid, since, until)
             except Exception as e:  # never let one profile kill the run
                 log.exception("profile %s", pid)
-                ok, m = False, f"профиль {pid}: {e}"
+                ok, m = False, f"profile {pid}: {e}"
             all_ok &= ok
             msgs.append(m)
         # Keitaro is one cheap request, so it runs on every sync (including a single new profile) and
@@ -231,7 +231,7 @@ def sync_all(days: int, trigger: str = "schedule", profile_ids: list[int] | None
             ok, m = sync_keitaro(k_since, until)
         except Exception as e:
             log.exception("keitaro")
-            ok, m = False, f"Keitaro: ошибка — {e}"
+            ok, m = False, f"Keitaro: error — {e}"
         all_ok &= ok
         msgs.append(m)
         try:
@@ -256,7 +256,7 @@ def sync_all(days: int, trigger: str = "schedule", profile_ids: list[int] | None
         except Exception:
             log.exception("fx")
 
-        message = " | ".join(msgs) or "Нет активных профилей"
+        message = " | ".join(msgs) or "No active profiles"
         with Session() as s:
             run = s.get(SyncRun, run_id)
             run.finished_at, run.ok, run.message = utcnow(), all_ok, message[:5000]
