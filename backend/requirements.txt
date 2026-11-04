@@ -1,0 +1,9 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlalchemy>=2.0.30
+psycopg[binary]>=3.2
+httpx[socks]>=0.28
+apscheduler>=3.10,<4
+cryptography>=43
+python-dotenv>=1.0
+itsdangerous>=2.2
